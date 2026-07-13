@@ -1,0 +1,7 @@
+# STEP 8 — Automate the strategy scanner every 30 minutes (paste into Claude Code)
+
+10am is too early to only run this once. Setups happen at 10:45, 11:30, sometimes after lunch.
+
+Fire this strategy scanner every 30 minutes from 10am to 2pm New York time.
+
+But don't blow up my phone with 9 messages a day. Only ping me if it's the first run of the day, or if there's a new hit. Otherwise stay quiet.

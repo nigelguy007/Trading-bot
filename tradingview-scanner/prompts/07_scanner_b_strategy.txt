@@ -1,0 +1,37 @@
+# STEP 7 — Build your strategy scanner (Scanner B) — the Trend Join Long setup
+# Requires TradingView Desktop running with a live chart and CDP port 9222.
+# Paste into Claude Code.
+
+Build me a Trend Join Long strategy scanner that filters tickers down to which ones meet my day-trading entry criteria right now.
+
+TEST UNIVERSE: 3 tickers — AMD, NVDA, MU. (Small universe so the demo finishes in a reasonable time.)
+
+PREREQ: TradingView Desktop must be running with CDP port 9222 enabled. First call tv_health_check. If cdp_connected=false OR api_available=false, stop and tell me to launch TV with: `open -a TradingView --args --remote-debugging-port=9222`. Do not proceed until I confirm.
+
+TIME GATE: Only proceed if current time is between 10:00am and 3:30pm New York time. Otherwise save an error JSON and exit cleanly.
+
+FOR EACH TICKER (sequential, do not parallelize):
+1. chart_set_symbol to the ticker (use bare ticker like "AMD")
+2. chart_set_timeframe to "D" (daily), then data_get_ohlcv count=210 → compute:
+- prev_daily_high = high of the last bar
+- prev_daily_close = close of the last bar
+- sma200 = mean of close for the last 200 bars
+3. quote_get for the current intraday price → curr_px
+4. chart_set_timeframe to "1" (1-minute), then data_get_ohlcv count=400 → compute:
+- pmh = max(high) of bars where today 04:00 ET <= bar.time < 09:30 ET (premarket high)
+- today_hod = max(high) of today's regular-session bars
+- daily_ok = (curr_px > prev_daily_high) AND (prev_daily_close > sma200)
+- intraday_breakout = (curr_px > pmh) AND (curr_px > today_hod)
+- Result = "PASS" if both true, else "fail_daily" or "fail_intraday"
+
+OUTPUT: Save to ./tjl_watchlist_YYYY-MM-DD_HHMMET.json with this schema:
+{
+"scanned_at": "",
+"candidates_checked": 3,
+"hits": [{"symbol": "AMD", "curr_price": 415.20, "prev_daily_high": 412.55, "sma200": 285.50, "pmh": 414.10, "today_hod": 415.50}],
+"all_results": [{"symbol": "AMD", "result": "PASS"}, {"symbol": "NVDA", "result": "fail_intraday"}, {"symbol": "MU", "result": "fail_daily"}]
+}
+
+After saving, print one line per ticker: "TICKER: PASS | fail_daily | fail_intraday — reason"
+
+Expected runtime: 3-5 minutes total (the per-ticker MCP loop is the bottleneck — sequential by design).

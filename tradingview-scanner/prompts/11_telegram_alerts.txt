@@ -1,0 +1,43 @@
+# STEP 11 — Send results straight to your phone with Telegram
+#
+# PRE-STEP (do this by hand first):
+#  1. Message @BotFather on Telegram → /newbot → copy the bot token
+#     (looks like 123456789:ABCdefGhIJKlmNoPQRsTUVwxyZ).
+#  2. Open the t.me/<your_bot_name> link BotFather gives you, press /start.
+#  3. Visit https://api.telegram.org/bot<YOUR_TOKEN>/getUpdates and find
+#     "chat":{"id": ... — that number is your chat ID.
+#  4. Put both in .env as TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID. NEVER commit the token.
+#
+# Then paste into Claude Code:
+
+Wire up Telegram notifications for both scanners.
+
+CREDENTIALS: I have my bot token and chat ID in .env in this directory. Read them (they're TELEGRAM_BOT_TOKEN and TELEGRAM_CHAT_ID). Do NOT print the token value to stdout or any file that gets committed.
+
+MODIFY both scanner scripts (premarket gappers + tjl strategy) to send Telegram messages after saving their JSON output:
+
+Format for Scanner A (premarket gappers):
+📊 *Premarket Gappers* — YYYY-MM-DD
+• TICKER $price +gap% — catalyst sentence
+• TICKER $price +gap% — catalyst sentence
+... (one bullet per gapper)
+If catalyst is null, omit the dash and catalyst portion.
+
+Format for Scanner B (TJL hits):
+🎯 *TJL Watchlist* — HH:MM ET
+• TICKER @ $price (PMH $X, prev_high $Y, SMA200 $Z)
+... (one bullet per hit)
+If 0 hits: body is "No TJL hits this run."
+
+SEND VIA CURL:
+curl -s "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+-d chat_id="${TELEGRAM_CHAT_ID}" \
+--data-urlencode text="" \
+-d parse_mode=Markdown
+
+GATING:
+- Scanner A: send on every run (it fires once per day, low volume)
+- Scanner B: send only on first run of day, new hit, or error (per the gating rules from before)
+- On any curl failure, log to stdout but don't fail the scan
+
+After modifying both scripts, run Scanner A once to verify the Telegram message lands on my phone.

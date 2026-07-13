@@ -1,0 +1,7 @@
+# STEP 1 — Install Claude Code (run in your Mac Terminal, not a Claude prompt)
+
+curl -fsSL https://claude.ai/install.sh | bash
+
+# Sign in with a PAID Claude plan (Pro $20 is enough to follow along).
+# Confirm it works:
+claude --version

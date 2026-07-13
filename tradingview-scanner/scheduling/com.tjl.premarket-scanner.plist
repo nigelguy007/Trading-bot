@@ -1,0 +1,44 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  launchd job for Scanner A (premarket gappers).
+  Fires every weekday at 8:30am. Because Macs sleep, RunAtLoad + a catch-up
+  guard inside the script handle "ran late because the laptop was asleep".
+
+  Install:
+    cp com.tjl.premarket-scanner.plist ~/Library/LaunchAgents/
+    # edit the absolute paths below to match your machine
+    launchctl load ~/Library/LaunchAgents/com.tjl.premarket-scanner.plist
+  Verify:
+    launchctl list | grep -i premarket
+  In the video, Claude Code generates this for you (Step 6) with a smarter
+  catch-up layer than the plain example here.
+-->
+<plist version="1.0">
+<dict>
+    <key>Label</key>
+    <string>com.tjl.premarket-scanner</string>
+    <key>ProgramArguments</key>
+    <array>
+        <string>/bin/bash</string>
+        <string>/Users/YOU/tradingview-scanner/scanners/premarket_gappers.sh</string>
+    </array>
+    <key>StartCalendarInterval</key>
+    <array>
+        <dict><key>Weekday</key><integer>1</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>2</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>3</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>4</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+        <dict><key>Weekday</key><integer>5</integer><key>Hour</key><integer>8</integer><key>Minute</key><integer>30</integer></dict>
+    </array>
+    <key>RunAtLoad</key>
+    <false/>
+    <key>StandardOutPath</key>
+    <string>/Users/YOU/tradingview-scanner/logs/premarket.out.log</string>
+    <key>StandardErrorPath</key>
+    <string>/Users/YOU/tradingview-scanner/logs/premarket.err.log</string>
+    <key>EnvironmentVariables</key>
+    <dict>
+        <key>TZ</key><string>America/New_York</string>
+    </dict>
+</dict>
+</plist>

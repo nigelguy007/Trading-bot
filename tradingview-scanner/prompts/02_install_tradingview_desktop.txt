@@ -1,0 +1,7 @@
+# STEP 2 — Install TradingView Desktop (manual, no Claude prompt)
+
+# 1. Get a paid TradingView plan (Essential $12.95/mo annual is enough for scanning;
+#    Pro+ or higher if you want PineScript backtesting with bar replay).
+# 2. Download the DESKTOP app from your TradingView account page.
+#    The browser version will NOT work with the MCP.
+# 3. Sign in to the desktop app and pin a starter chart (any ticker, any timeframe).

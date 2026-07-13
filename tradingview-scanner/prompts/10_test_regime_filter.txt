@@ -1,0 +1,31 @@
+# STEP 10 — Test an "obvious" SPY/QQQ regime filter (and learn from it)
+# Paste into Claude Code. (In the video this filter HURT the strategy — that's the lesson: test everything.)
+
+Now I want to test whether adding an SPY/QQQ regime filter improves the strategy. Modify the SAME "Demo TJL Strategy" slot — add the filter on top of the existing entry logic — then re-run and compare to the backtest numbers you just gave me.
+
+REGIME FILTER LOGIC:
+- At the first 5-minute bar at or after 10:00am ET each day, latch a `regime_ok` flag:
+regime_ok = (SPY current close > SPY's previous daily close) AND (QQQ current close > QQQ's previous daily close)
+- Use request.security to pull SPY and QQQ data. Use lookahead=barmerge.lookahead_off to avoid lookahead bias.
+- Once latched, hold `regime_ok` for the rest of the day. Reset to na on new_day.
+- Add `regime_ok == true` to the existing can_enter condition (currently `entry_trigger and strategy.position_size == 0 and not at_force_close`).
+- Visual: add a faint red background tint on regime-fail days so it's obvious when the filter is gating us out.
+
+STEPS:
+1. pine_get_source to read the current "Demo TJL Strategy" code
+2. Splice in the regime filter logic (don't rewrite the whole strategy — just add the SPY/QQQ requests, the regime_ok latch, and modify can_enter)
+3. pine_set_source with the modified version
+4. pine_smart_compile. If has_errors=true, show me the error and stop.
+5. Once clean, the strategy auto-reruns on the chart (no need to click Add to chart again — it's already applied).
+6. capture_screenshot region="strategy_tester" to grab the new numbers.
+
+REPORT BACK in this exact format:
+
+| Metric | Without regime (v1) | With regime (v2) | Delta |
+|---|---|---|---|
+| Total trades | X | Y | ±N |
+| Win rate | X% | Y% | ±N pp |
+| Total P&L | $X | $Y | ±$N |
+| Profit factor | X | Y | ±N |
+
+Then tell me in plain English: did the regime filter help or hurt? By how much? Is the delta big enough to actually change my behavior?

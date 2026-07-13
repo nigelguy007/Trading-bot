@@ -1,0 +1,10 @@
+# STEP 4 — Try a few basic prompts (paste one at a time to feel out the MCP)
+
+Switch the chart to NVDA on a 5-minute timeframe and add the 200 SMA and RSI.
+
+# (Make sure the watchlist panel is open in TradingView first — click the watchlist icon on the right.)
+Read my TradingView watchlist and tell me which names are up the most today.
+
+Look at NVDA on the daily and draw the most important support and resistance levels you see, plus today's premarket high.
+
+Give me a quick end-of-day briefing on NVDA — what happened today, key levels respected or broken, and what to watch tomorrow.

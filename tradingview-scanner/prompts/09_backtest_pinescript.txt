@@ -1,0 +1,16 @@
+# STEP 9 — Backtest your strategy with PineScript (paste into Claude Code)
+# Replace the final line with the contents of pine/trend_join_breakout.pine
+
+Build a Trend Join Long strategy backtest in TradingView end-to-end:
+
+1. Call tv_health_check. Confirm cdp_connected=true and api_available=true. If either is false, stop and tell me to launch TV with: open -a TradingView --args --remote-debugging-port=9222
+2. chart_set_symbol("AMD"), chart_set_timeframe("5"), and confirm Extended Hours is enabled (the strategy needs premarket data to compute PMH).
+3. Open the existing Pine slot called "Demo TJL Strategy" using pine_open with that exact name. DO NOT use pine_new — that risks overwriting other Pine slots in the library.
+4. Inject the PineScript code below using pine_set_source, then pine_smart_compile. If has_errors=true, show me the error and stop — do not auto-fix without confirming.
+5. Once it compiles clean, use ui_find_element with query='[title="Add to chart"]' strategy='css' to locate the Add-to-Chart button, then ui_mouse_click on its coordinates to apply the strategy.
+6. The Strategy Tester populates at the bottom. The MCP's data_get_strategy_results tool returns empty (known bug) — workaround is capture_screenshot region="strategy_tester" and read the numbers off the image.
+7. Report back the win rate, total trades, total P&L, and profit factor.
+
+PINESCRIPT CODE:
+
+[paste the full contents of pine/trend_join_breakout.pine here]

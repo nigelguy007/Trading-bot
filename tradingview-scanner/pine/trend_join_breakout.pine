@@ -1,0 +1,98 @@
+//@version=5
+// ============================================================================
+// Trend Join Long — intraday breakout strategy (reference implementation)
+// ============================================================================
+// Setup (from the video):
+//   1. Gap up over a daily key level   -> close > previous daily high
+//   2. Daily trend intact              -> previous daily close > 200 SMA (daily)
+//   3. Intraday breakout               -> price breaks above the premarket high
+//                                         AND above today's high-of-day
+// Management: partial exit at +1R, trail the remainder, force-close before EOD.
+//
+// This is a clean starting point that matches the logic Scanner B checks and
+// the "Demo TJL Strategy" the video backtests. In the real workflow you paste
+// prompts/09_backtest_pinescript.txt into Claude Code and let it inject/compile
+// this in TradingView. Run it on a 5-min chart with Extended Hours ON.
+// Momentum universe only (semis, AI, energy infra, high-beta) — it loses on
+// defensives (utilities/staples), by design.
+// ============================================================================
+
+strategy("Demo TJL Strategy", overlay=true, initial_capital=25000,
+     default_qty_type=strategy.percent_of_equity, default_qty_value=100,
+     commission_type=strategy.commission.cash_per_order, commission_value=1.0,
+     calc_on_every_tick=false, process_orders_on_close=true)
+
+// ---- Inputs ----------------------------------------------------------------
+riskPerTradePct = input.float(1.0, "Risk per trade (%)", minval=0.1, step=0.1)
+stopPct         = input.float(2.0, "Initial stop (%)",   minval=0.1, step=0.1)
+partialR        = input.float(1.0, "Partial-exit at (R)", minval=0.5, step=0.5)
+partialPct      = input.int(50, "Partial size (%)", minval=10, maxval=90)
+trailPct        = input.float(1.5, "Trail (%)", minval=0.1, step=0.1)
+sessionEnd      = input.int(1555, "Force-close (HHMM ET)", minval=0, maxval=2359)
+
+// ---- Session / time helpers (chart TZ assumed America/New_York) ------------
+newDay      = ta.change(time("D")) != 0
+minutesNow  = hour * 100 + minute
+inRTH       = minutesNow >= 930 and minutesNow < 1600
+isPremarket = minutesNow >= 400 and minutesNow < 930
+atForceClose = minutesNow >= sessionEnd
+
+// ---- Daily context (no lookahead) ------------------------------------------
+prevDailyHigh  = request.security(syminfo.tickerid, "D", high[1],  lookahead=barmerge.lookahead_off)
+prevDailyClose = request.security(syminfo.tickerid, "D", close[1], lookahead=barmerge.lookahead_off)
+sma200Daily    = request.security(syminfo.tickerid, "D", ta.sma(close, 200), lookahead=barmerge.lookahead_off)
+
+// ---- Intraday levels: premarket high + today's high-of-day -----------------
+var float pmh       = na
+var float todayHod  = na
+if newDay
+    pmh      := na
+    todayHod := na
+if isPremarket
+    pmh := na(pmh) ? high : math.max(pmh, high)
+if inRTH
+    todayHod := na(todayHod) ? high : math.max(todayHod, high)
+
+// ---- Entry conditions ------------------------------------------------------
+daily_ok         = close > prevDailyHigh and prevDailyClose > sma200Daily
+intraday_breakout = (not na(pmh)) and close > pmh and close > nz(todayHod[1], high)
+entry_trigger    = daily_ok and intraday_breakout and inRTH
+
+can_enter = entry_trigger and strategy.position_size == 0 and not atForceClose
+
+// ---- Position sizing (risk-based) ------------------------------------------
+stopDist = close * stopPct / 100.0
+riskCash = strategy.equity * riskPerTradePct / 100.0
+qty      = stopDist > 0 ? math.max(1, math.floor(riskCash / stopDist)) : 1
+
+var float entryPrice = na
+var float stopPrice  = na
+var bool  tookPartial = false
+
+if can_enter
+    strategy.entry("TJL", strategy.long, qty=qty)
+    entryPrice  := close
+    stopPrice   := close - stopDist
+    tookPartial := false
+
+// ---- Trade management ------------------------------------------------------
+if strategy.position_size > 0
+    rMultiple   = (close - entryPrice) / stopDist
+    // Partial exit at +partialR
+    if not tookPartial and rMultiple >= partialR
+        strategy.close("TJL", qty_percent=partialPct, comment="partial")
+        tookPartial := true
+        stopPrice   := entryPrice           // move stop to breakeven
+    // Trail the remainder
+    trailStop = close * (1 - trailPct / 100.0)
+    stopPrice := math.max(stopPrice, trailStop)
+    strategy.exit("stop", "TJL", stop=stopPrice)
+    // End-of-day flat
+    if atForceClose
+        strategy.close("TJL", comment="EOD")
+
+// ---- Plots -----------------------------------------------------------------
+plot(pmh,           "Premarket High", color=color.new(color.orange, 0), style=plot.style_linebr)
+plot(prevDailyHigh, "Prev Daily High", color=color.new(color.blue, 50))
+plot(sma200Daily,   "200 SMA (D)",     color=color.new(color.gray, 30))
+bgcolor(entry_trigger ? color.new(color.green, 85) : na)

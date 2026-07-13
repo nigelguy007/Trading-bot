@@ -1,0 +1,31 @@
+# STEP 5 — Build your premarket gap scanner (Scanner A)
+# Paste into Claude Code (run from the directory where you want the scanner + JSON output to live).
+
+Build me a premarket gappers scanner as a single shell script in this directory.
+
+DATA SOURCE: WebFetch https://finance.yahoo.com/markets/stocks/gainers/
+Parse out ticker, price, gap %, volume for each row.
+
+FILTERS:
+- gap_pct > 5
+- price > $3
+- premarket_volume > 50000
+- Keep top 10 by gap_pct descending (cap at 10 for runtime)
+
+NEWS CATALYST: For each of the top 10, WebFetch https://www.benzinga.com/quote/{TICKER} with this exact prompt: "What recent news or catalyst is driving {TICKER} stock today? Return a one-sentence summary, then up to 2 recent headlines verbatim. Just the data — no commentary."
+
+IMPORTANT: Do NOT use https://finance.yahoo.com/quote/{TICKER}/news/ — that endpoint returns HTTP 503 reliably. Benzinga is the working source.
+
+OUTPUT: Save to ./premarket_gappers_YYYY-MM-DD.json with this exact schema:
+{
+"scanned_at": "",
+"gappers": [
+{"rank": 1, "symbol": "AAPL", "price": 175.20, "gap_pct": 7.5, "premarket_volume": 1200000, "catalyst": "Beat Q1 earnings, raised FY guidance", "headlines": ["Apple Reports Strong Q1", "Analysts Boost Price Targets"]}
+]
+}
+
+If a single ticker's catalyst lookup fails, set catalyst=null and headlines=[] for that ticker — do not abort the whole scan.
+
+After saving, print a one-line summary: "Premarket Gappers: N names. Top: TICKER1 (X%) — catalyst1, TICKER2 (Y%) — catalyst2, TICKER3 (Z%) — catalyst3"
+
+Expected runtime: 60-90 seconds. Do not run it more than once unless I ask.

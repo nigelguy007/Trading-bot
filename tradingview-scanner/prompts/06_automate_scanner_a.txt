@@ -1,0 +1,8 @@
+# STEP 6 — Automate the premarket scanner (paste into Claude Code)
+
+This works great. Now I don't want to run it manually every morning. Schedule it to fire on its own every weekday at 8:30am New York time.
+
+My laptop is sometimes asleep at that time. Don't try to keep my Mac awake — instead, if I open the laptop later in the morning (anytime before market close), have it run a catch-up scan automatically. Skip weekends, don't run twice in the same day, and don't fire if the premarket data is already stale.
+
+# Verify afterward:
+#   launchctl list | grep -i premarket

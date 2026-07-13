@@ -1,0 +1,14 @@
+# STEP 3 — Install the TradingView MCP
+# The install needs two prompts, with a Claude Code restart in between.
+
+# ---- Prompt 1 — paste into Claude Code ----
+Install the TradingView MCP server from https://github.com/tradesdontlie/tradingview-mcp. Clone it to ~/tradingview-mcp, run npm install, and register it in my Claude MCP config at user scope. Then launch TradingView with the remote debugging port enabled (port 9222). Tell me when you're done.
+
+# Approve each shell command Claude asks to run (git clone, npm install, claude mcp add, TradingView launch).
+# Then QUIT Claude Code (Ctrl+C or close the window) and RE-LAUNCH it — this restart loads the MCP.
+
+# ---- Prompt 2 — paste into the NEW session ----
+Run tv_health_check and tell me if TradingView is connected.
+
+# Success = cdp_connected: true AND api_available: true
+# If port 9222 is busy: "Change the MCP debug port to 9223. Update both the MCP config and re-launch TradingView with the new port."

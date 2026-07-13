@@ -1,0 +1,8 @@
+# Secrets — never commit
+.env
+
+# Scanner outputs
+premarket_gappers_*.json
+tjl_watchlist_*.json
+logs/
+*.log
