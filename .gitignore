@@ -1,0 +1,43 @@
+# === SECRETS — never commit these ===
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+credentials.json
+
+# === Runtime data ===
+logs/
+data/
+*.db
+*.sqlite
+*.sqlite3
+*.log
+
+# === Python ===
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+venv/
+.venv/
+env/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# === Node / frontend ===
+node_modules/
+.next/
+out/
+npm-debug.log*
+
+# === Editors / OS ===
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db

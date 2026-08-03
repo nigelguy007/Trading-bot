@@ -1,0 +1,17 @@
+# AI Trading Bot — lean dependency set.
+#
+# Deliberately small: every extra dependency is another way `pip install` can
+# fail on a fresh machine (guide §11, "Install fails"). Everything here is a
+# pure-python or widely-prebuilt wheel on Python 3.11+.
+
+anthropic>=0.40.0        # Claude / Fable 5 — the analysis brain
+httpx>=0.28.0            # Alpaca, NewsAPI, Discord, Telegram (no vendor SDKs)
+pandas>=2.2.0            # OHLCV frames
+numpy>=2.2.0             # indicator math
+pydantic>=2.10.0
+pydantic-settings>=2.7.0 # .env -> typed settings
+python-dotenv>=1.0.0
+structlog>=24.4.0        # run logs
+apscheduler>=3.10.4      # the 15-minute scan loop
+fastapi>=0.115.0         # TradingView webhook + dashboard
+uvicorn[standard]>=0.32.0
