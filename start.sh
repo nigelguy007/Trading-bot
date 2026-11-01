@@ -75,21 +75,81 @@ fi
 # --- 5. Run ----------------------------------------------------------------
 COMMAND="${1:-serve}"
 
-# Commands that talk to Claude. Fail these with one clear line rather than a
-# 15-line Python traceback, which is what a missing key produces otherwise.
+# Write a key into .env without the user having to find and edit a hidden
+# dotfile. Done in Python so a key containing / or \ can't corrupt the file.
+save_api_key() {
+    "$VPY" - "$1" <<'PY'
+import pathlib, re, sys
+key = sys.argv[1].strip()
+path = pathlib.Path(".env")
+text = path.read_text(encoding="utf-8")
+line = "ANTHROPIC_API_KEY=" + key
+if re.search(r"^ANTHROPIC_API_KEY=.*$", text, flags=re.M):
+    # A lambda replacement keeps backslashes in the key literal.
+    text = re.sub(r"^ANTHROPIC_API_KEY=.*$", lambda _m: line, text, count=1, flags=re.M)
+else:
+    text = text.rstrip("\n") + "\n" + line + "\n"
+path.write_text(text, encoding="utf-8")
+PY
+}
+
+prompt_for_api_key() {
+    printf '\n%s✗%s No Claude API key yet.\n\n' "$RED" "$OFF"
+    say "  Get one at ${GREEN}https://console.anthropic.com${OFF} → API Keys."
+    say "  It starts with ${DIM}sk-ant-${OFF}"
+    say ""
+
+    # No terminal to read from (CI, piped input): print instructions instead.
+    if [ ! -t 0 ]; then
+        say "  Then add it to this file:  $(pwd)/.env"
+        say "  on the line:               ANTHROPIC_API_KEY=..."
+        say ""
+        return 1
+    fi
+
+    printf '  Paste it here and press Enter (input is hidden, nothing is echoed).\n'
+    printf '  Or just press Enter to skip.\n\n'
+    printf '  Key: '
+    read -r -s NEWKEY || true
+    printf '\n\n'
+
+    NEWKEY="$(printf '%s' "$NEWKEY" | tr -d '[:space:]')"
+
+    if [ -z "$NEWKEY" ]; then
+        say "  Skipped. These still work without a key:"
+        say "     ./start.sh backtest"
+        say "     ./start.sh doctor"
+        say ""
+        return 1
+    fi
+
+    case "$NEWKEY" in
+        sk-ant-*) ;;
+        *)  warn "That doesn't look like an Anthropic key (they begin 'sk-ant-')."
+            say  "  Saving it anyway — run ./start.sh doctor --check-apis to test it."
+            ;;
+    esac
+
+    save_api_key "$NEWKEY"
+    ok "Saved to .env  ${DIM}(${#NEWKEY} characters, ending ...${NEWKEY: -4})${OFF}"
+    say ""
+    return 0
+}
+
+# Commands that talk to Claude. Offer to fix a missing key on the spot rather
+# than failing with a 15-line Python traceback from inside the web server.
+needs_key() {
+    "$VPY" -c 'from src.config import get_settings; raise SystemExit(0 if get_settings().has_llm_key else 1)' 2>/dev/null
+}
+
 case "$COMMAND" in
+    setkey)
+        prompt_for_api_key || exit 1
+        exec "$VPY" -m src.cli doctor
+        ;;
     serve|scan|run|analyze|report|review|optimize|portfolio-review)
-        if ! "$VPY" -c 'from src.config import get_settings; raise SystemExit(0 if get_settings().has_llm_key else 1)' 2>/dev/null; then
-            printf '\n%s✗%s No Claude API key yet.\n\n' "$RED" "$OFF" >&2
-            say "  1. Open the file:  $(pwd)/.env"
-            say "  2. Find the line:  ANTHROPIC_API_KEY=your_anthropic_api_key_here"
-            say "  3. Replace it with your key from https://console.anthropic.com"
-            say ""
-            say "  ${DIM}No key yet? These work without one:${OFF}"
-            say "     ./start.sh backtest"
-            say "     ./start.sh doctor"
-            say ""
-            exit 1
+        if ! needs_key; then
+            prompt_for_api_key || exit 1
         fi
         ;;
     backtest)

@@ -78,10 +78,14 @@ cd Trading-bot
 
 ```bash
 ./start.sh doctor      # check the setup
+./start.sh setkey      # paste your Anthropic key
 ./start.sh scan        # one pass over the watchlist
 ./start.sh backtest    # works with no API keys at all
 ./start.sh             # the dashboard
 ```
+
+> Run these one per line. Don't paste a `#` comment onto the end of a command —
+> macOS's zsh treats it as arguments, not a comment.
 
 > **`ModuleNotFoundError: No module named 'src'`** means you ran
 > `python -m src.cli` from somewhere other than the project folder. Use
@@ -101,8 +105,19 @@ Python 3.11+ is required.
 
 ### Configure
 
-Open `.env` and add your keys. It is gitignored — **never commit it.** Leaked
-broker keys can drain a real account.
+Add your Anthropic key:
+
+```bash
+./start.sh setkey
+```
+
+It prompts for the key and writes it into `.env` for you. (`.env` is a hidden
+file, so if you'd rather edit it by hand, use `open -e .env` from Terminal —
+Finder won't show it.) Any command that needs Claude will offer the same
+prompt if no key is set yet.
+
+The file is gitignored — **never commit it.** Leaked broker keys can drain a
+real account.
 
 | Service | Why | Where |
 |---|---|---|
