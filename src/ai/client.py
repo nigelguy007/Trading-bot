@@ -59,18 +59,24 @@ class LLMClient:
         self._http: Optional[httpx.Client] = None
 
         if self.provider == "anthropic":
-            if not settings.anthropic_api_key:
+            if not settings.has_llm_key:
                 raise LLMError(
-                    "ANTHROPIC_API_KEY is not set. Add it to .env — Claude is the "
-                    "analysis brain and nothing downstream works without it."
+                    "ANTHROPIC_API_KEY is not set (or is still the template "
+                    "placeholder). Open .env and paste your key from "
+                    "console.anthropic.com — Claude is the analysis brain and "
+                    "nothing downstream works without it. "
+                    "Run `./start.sh doctor` to check."
                 )
             import anthropic  # imported lazily so `doctor` can report a missing package
 
             self._anthropic = anthropic.Anthropic(api_key=settings.anthropic_api_key)
             self._errors = anthropic
         else:
-            if not settings.openrouter_api_key:
-                raise LLMError("LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is empty.")
+            if not settings.has_llm_key:
+                raise LLMError(
+                    "LLM_PROVIDER=openrouter but OPENROUTER_API_KEY is empty or "
+                    "still the template placeholder."
+                )
             self._http = httpx.Client(
                 timeout=120.0,
                 headers={

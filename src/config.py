@@ -26,6 +26,24 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 LIVE_CONFIRMATION_PHRASE = "I_UNDERSTAND_THE_RISK"
 
 
+def is_placeholder(value: str) -> bool:
+    """
+    True when a setting still holds the text .env.example shipped with.
+
+    Worth a shared helper: a placeholder is non-empty, so every naive
+    "is it set?" check passes and the user gets a confusing 401 instead of
+    the graceful offline fallback they should have had.
+    """
+    if not value:
+        return False
+    v = value.strip().lower()
+    return (
+        v.startswith("your_")
+        or v.endswith("_here")
+        or v in {"changeme", "change_me", "xxx", "todo"}
+    )
+
+
 class Settings(BaseSettings):
     model_config = SettingsConfigDict(
         env_file=REPO_ROOT / ".env",
@@ -178,7 +196,19 @@ class Settings(BaseSettings):
 
     @property
     def has_broker_keys(self) -> bool:
-        return bool(self.alpaca_api_key and self.alpaca_secret_key)
+        """Template placeholders count as absent, so an unedited .env falls
+        back to the local simulator instead of 401-ing against Alpaca."""
+        return (
+            bool(self.alpaca_api_key and self.alpaca_secret_key)
+            and not is_placeholder(self.alpaca_api_key)
+            and not is_placeholder(self.alpaca_secret_key)
+        )
+
+    @property
+    def has_llm_key(self) -> bool:
+        if self.llm_provider == "openrouter":
+            return bool(self.openrouter_api_key) and not is_placeholder(self.openrouter_api_key)
+        return bool(self.anthropic_api_key) and not is_placeholder(self.anthropic_api_key)
 
     @property
     def log_path(self) -> Path:

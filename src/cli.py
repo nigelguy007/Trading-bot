@@ -15,7 +15,13 @@ import argparse
 import sys
 from pathlib import Path
 
-from src.config import LIVE_CONFIRMATION_PHRASE, REPO_ROOT, Settings, get_settings
+from src.config import (
+    LIVE_CONFIRMATION_PHRASE,
+    REPO_ROOT,
+    Settings,
+    get_settings,
+    is_placeholder,
+)
 from src.logging_setup import configure_logging
 
 
@@ -65,12 +71,23 @@ def cmd_doctor(args: argparse.Namespace) -> int:
                 if value != value.strip():
                     warn.append(f"{key.strip()} has surrounding whitespace in .env")
 
-    if settings.anthropic_api_key or settings.llm_provider == "openrouter":
+    if is_placeholder(settings.anthropic_api_key):
+        bad.append(
+            "ANTHROPIC_API_KEY is still the template placeholder — open .env and "
+            "paste your real key from console.anthropic.com"
+        )
+    elif settings.anthropic_api_key or settings.llm_provider == "openrouter":
         ok.append(f"LLM provider: {settings.llm_provider} ({settings.claude_model})")
     else:
         bad.append("ANTHROPIC_API_KEY is empty — the analysis brain cannot run")
 
-    if settings.has_broker_keys:
+    if is_placeholder(settings.alpaca_api_key) or is_placeholder(settings.alpaca_secret_key):
+        warn.append(
+            "ALPACA keys are still template placeholders — treated as absent, so the "
+            "bot uses the local simulator and CSV prices. Paste real PAPER keys to "
+            "trade against Alpaca."
+        )
+    elif settings.has_broker_keys:
         ok.append("Alpaca keys present")
     else:
         warn.append("no Alpaca keys — the bot will use the local simulator and CSV data")

@@ -64,24 +64,45 @@ talks straight to your money — the risk rules are the gate.**
 
 ## Quick start
 
-### 1. Install
+### The one-command way (macOS / Linux)
 
 ```bash
-python -m venv venv
+git clone https://github.com/nigelguy007/Trading-bot.git
+cd Trading-bot
+./start.sh
+```
+
+`start.sh` creates the virtual environment, installs dependencies, creates
+`.env` from the template on first run, and starts the dashboard at
+**http://localhost:8001**. It works from any directory and is safe to re-run.
+
+```bash
+./start.sh doctor      # check the setup
+./start.sh scan        # one pass over the watchlist
+./start.sh backtest    # works with no API keys at all
+./start.sh             # the dashboard
+```
+
+> **`ModuleNotFoundError: No module named 'src'`** means you ran
+> `python -m src.cli` from somewhere other than the project folder. Use
+> `./start.sh`, which handles that for you, or `cd` into the repo first.
+
+### The manual way
+
+```bash
+python3 -m venv venv
 source venv/bin/activate          # Windows: venv\Scripts\activate
 pip install -r requirements-trader.txt
+cp .env.example .env
+python -m src.cli serve           # must be run from the project root
 ```
 
 Python 3.11+ is required.
 
-### 2. Configure
+### Configure
 
-```bash
-cp .env.example .env
-```
-
-Fill in your keys. `.env` is gitignored — **never commit it.** Leaked broker
-keys can drain a real account.
+Open `.env` and add your keys. It is gitignored — **never commit it.** Leaked
+broker keys can drain a real account.
 
 | Service | Why | Where |
 |---|---|---|
@@ -95,38 +116,42 @@ keys can drain a real account.
 Set up a dedicated email and a fresh broker paper account just for this. It
 keeps your keys, alerts and experiments separate from anything real.
 
-### 3. Check the setup
+Keys left as template placeholders (`your_paper_key`) are treated as **absent**,
+not as real keys — so an unedited `.env` runs offline against the simulator
+instead of failing with a 401. `doctor` tells you which are still placeholders.
+
+### Check the setup
 
 ```bash
-python -m src.cli doctor              # offline checks
-python -m src.cli doctor --check-apis # also makes one real call to each API
+./start.sh doctor              # offline checks
+./start.sh doctor --check-apis # also makes one real call to each API
 ```
 
 `doctor` catches the things that actually go wrong: a missing `.env`, keys with
-trailing spaces, a `.env` that isn't gitignored, missing packages, and whether
-live trading is (correctly) still switched off.
+trailing spaces, placeholder keys, a `.env` that isn't gitignored, missing
+packages, and whether live trading is (correctly) still switched off.
 
-### 4. Run it
+### The dashboard
 
-```bash
-python -m src.cli scan     # one pass over the watchlist
-python -m src.cli pending  # what's waiting on your approval
-python -m src.cli approve sig_abc123
-python -m src.cli run      # the scheduled loop
-python -m src.cli serve    # dashboard on http://localhost:8001
-```
+![Dashboard](docs/dashboard-desktop.png)
+
+Equity, day P&L, drawdown, exposure and open risk at the top; pending signals
+with Approve / Deny buttons; open positions; recent signals including the ones
+the risk gate *rejected* and why; and running performance. It works on a phone
+(`docs/dashboard-mobile.png`) so the approve/deny buttons are usable away from
+your desk.
 
 ### No keys yet? Run the whole thing offline
 
 ```bash
-python scripts/make_sample_data.py
-python -m src.cli backtest --symbols AAPL,MSFT --bars 400
-python -m src.cli scan --simulated
+./start.sh backtest --symbols AAPL,MSFT --bars 400
+./start.sh scan --simulated
 ```
 
-`--simulated` uses a local broker and CSV prices, so every stage runs without a
-single API key. The sample data is **random** — it proves the wiring works and
-says nothing whatsoever about any strategy.
+A local broker and CSV prices, so every stage runs without a single API key.
+`python scripts/make_sample_data.py` generates the CSVs — the data is
+**random**, so it proves the wiring works and says nothing whatsoever about any
+strategy.
 
 ---
 
