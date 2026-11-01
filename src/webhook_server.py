@@ -262,7 +262,24 @@ DASHBOARD_HTML = """<!doctype html>
   .ok { background:#238636; color:#fff; } .no { background:#30363d; color:#e6edf3; }
   .wrap { overflow-x:auto; }
   .empty { color:#8b949e; padding:12px 0; }
-  .reason { max-width:520px; white-space:pre-wrap; }
+  td, th { white-space:nowrap; }
+  .reason { max-width:520px; white-space:normal; }
+
+  /* Phone layout. Approving a trade from your phone is the point of the
+     Telegram buttons, so the same must work here: drop the wide explanatory
+     columns rather than pushing Approve/Deny off the right edge. */
+  @media (max-width: 720px) {
+    body { padding:14px; }
+    .hide-sm { display:none; }
+    .cards { grid-template-columns:repeat(auto-fit,minmax(130px,1fr)); gap:8px; }
+    .card .value { font-size:17px; }
+    table { font-size:12px; }
+    td, th { padding:6px 6px; }
+    button { padding:7px 10px; }
+    /* Stack the actions so Deny isn't clipped off the right edge. */
+    #pending td:last-child { white-space:normal; }
+    #pending button { display:block; width:100%; margin:0 0 4px 0; }
+  }
 </style>
 </head>
 <body>
@@ -293,8 +310,11 @@ function card(label, value, klass="") {
           <div class="value ${klass}">${value}</div></div>`;
 }
 function table(el, headers, rows) {
+  const head = headers.map(h =>
+    typeof h === "string" ? `<th>${h}</th>` : `<th class="${h.c}">${h.t}</th>`
+  ).join("");
   el.innerHTML = rows.length
-    ? `<tr>${headers.map(h=>`<th>${h}</th>`).join("")}</tr>` + rows.join("")
+    ? `<tr>${head}</tr>` + rows.join("")
     : `<tr><td class="empty">nothing yet</td></tr>`;
 }
 
@@ -321,14 +341,19 @@ async function refresh() {
       card("Positions", pf.positions.length);
 
     table(document.getElementById("pending"),
-      ["Symbol","Dir","Entry","Stop","Target","R:R","Size","Risk",""],
+      ["Symbol",
+       {t:"Dir", c:"hide-sm"}, "Entry", "Stop",
+       {t:"Target", c:"hide-sm"}, {t:"R:R", c:"hide-sm"},
+       {t:"Size", c:"hide-sm"}, "Risk", ""],
       pend.pending.map(p => {
         const s = p.signal;
         return `<tr>
-          <td>${esc(s.symbol)}</td><td>${esc(s.direction)}</td>
+          <td>${esc(s.symbol)}</td>
+          <td class="hide-sm">${esc(s.direction)}</td>
           <td>${s.entry.toFixed(2)}</td><td>${s.stop.toFixed(2)}</td>
-          <td>${s.target.toFixed(2)}</td><td>${(s.risk_reward ?? 0).toFixed(2)}</td>
-          <td>${p.sizing.shares}</td>
+          <td class="hide-sm">${s.target.toFixed(2)}</td>
+          <td class="hide-sm">${(s.risk_reward ?? 0).toFixed(2)}</td>
+          <td class="hide-sm">${p.sizing.shares}</td>
           <td>${money(p.sizing.dollar_risk)} (${p.sizing.account_risk_pct.toFixed(2)}%)</td>
           <td><button class="ok" onclick="act('${esc(s.id)}','approve')">Approve</button>
               <button class="no" onclick="act('${esc(s.id)}','deny')">Deny</button></td>
@@ -343,14 +368,16 @@ async function refresh() {
           <td class="${cls(p.unrealized_pnl)}">${money(p.unrealized_pnl)}</td></tr>`));
 
     table(document.getElementById("signals"),
-      ["Time","Symbol","Dir","Entry","Stop","R:R","Status","Note"],
+      [{t:"Time", c:"hide-sm"}, "Symbol", {t:"Dir", c:"hide-sm"},
+       "Entry", "Stop", {t:"R:R", c:"hide-sm"}, "Status",
+       {t:"Note", c:"hide-sm"}],
       sigs.signals.map(s => `<tr>
-          <td class="muted">${esc((s.created_at||"").slice(5,16).replace("T"," "))}</td>
-          <td>${esc(s.symbol)}</td><td>${esc(s.direction)}</td>
+          <td class="muted hide-sm">${esc((s.created_at||"").slice(5,16).replace("T"," "))}</td>
+          <td>${esc(s.symbol)}</td><td class="hide-sm">${esc(s.direction)}</td>
           <td>${(s.entry||0).toFixed(2)}</td><td>${(s.stop||0).toFixed(2)}</td>
-          <td>${(s.risk_reward||0).toFixed(2)}</td>
+          <td class="hide-sm">${(s.risk_reward||0).toFixed(2)}</td>
           <td>${esc(s.status)}</td>
-          <td class="reason muted">${esc(s.risk_approved ? (s.reasoning||"").slice(0,160) : s.risk_reason)}</td>
+          <td class="reason muted hide-sm">${esc(s.risk_approved ? (s.reasoning||"").slice(0,160) : s.risk_reason)}</td>
         </tr>`));
 
     document.getElementById("metrics").innerHTML =
