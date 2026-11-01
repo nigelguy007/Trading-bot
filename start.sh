@@ -75,6 +75,43 @@ fi
 # --- 5. Run ----------------------------------------------------------------
 COMMAND="${1:-serve}"
 
+# Commands that talk to Claude. Fail these with one clear line rather than a
+# 15-line Python traceback, which is what a missing key produces otherwise.
+case "$COMMAND" in
+    serve|scan|run|analyze|report|review|optimize|portfolio-review)
+        if ! "$VPY" -c 'from src.config import get_settings; raise SystemExit(0 if get_settings().has_llm_key else 1)' 2>/dev/null; then
+            printf '\n%s✗%s No Claude API key yet.\n\n' "$RED" "$OFF" >&2
+            say "  1. Open the file:  $(pwd)/.env"
+            say "  2. Find the line:  ANTHROPIC_API_KEY=your_anthropic_api_key_here"
+            say "  3. Replace it with your key from https://console.anthropic.com"
+            say ""
+            say "  ${DIM}No key yet? These work without one:${OFF}"
+            say "     ./start.sh backtest"
+            say "     ./start.sh doctor"
+            say ""
+            exit 1
+        fi
+        ;;
+    backtest)
+        # Backtesting without broker keys reads data/csv/*.csv. On a fresh
+        # clone there are none, and the run silently tests zero bars — so
+        # generate the sample set rather than reporting an empty result.
+        if ! compgen -G "data/csv/*.csv" > /dev/null; then
+            say "${DIM}No price data yet — generating a synthetic sample set...${OFF}"
+            # Cover the configured watchlist, so nothing is reported as skipped.
+            SYMS="$("$VPY" -c 'from src.config import get_settings; print(",".join(get_settings().all_symbols))' 2>/dev/null)"
+            if [ -n "$SYMS" ]; then
+                "$VPY" scripts/make_sample_data.py --symbols "$SYMS" >/dev/null
+            else
+                "$VPY" scripts/make_sample_data.py >/dev/null
+            fi
+            warn "Sample data is RANDOM. It proves the pipeline runs; it says"
+            say  "  nothing about any strategy. Use real data before believing a number."
+            say  ""
+        fi
+        ;;
+esac
+
 if [ "$COMMAND" = "serve" ]; then
     PORT="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
     PORT="${PORT:-8001}"
