@@ -7,8 +7,10 @@
 credentials.json
 
 # === Runtime data ===
-logs/
-data/
+# Leading slash matters: a bare `data/` also matches `src/data/` and silently
+# swallows that package. Anchor anything that names a real source directory.
+/logs/
+/data/
 *.db
 *.sqlite
 *.sqlite3
@@ -19,11 +21,11 @@ __pycache__/
 *.py[cod]
 *.egg-info/
 .eggs/
-build/
-dist/
-venv/
-.venv/
-env/
+/build/
+/dist/
+/venv/
+/.venv/
+/env/
 .pytest_cache/
 .mypy_cache/
 .ruff_cache/
@@ -31,9 +33,9 @@ env/
 htmlcov/
 
 # === Node / frontend ===
-node_modules/
-.next/
-out/
+/node_modules/
+/.next/
+/out/
 npm-debug.log*
 
 # === Editors / OS ===
