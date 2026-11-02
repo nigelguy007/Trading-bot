@@ -67,10 +67,31 @@ class Settings(BaseSettings):
     alpaca_paper: bool = True
     alpaca_data_feed: Literal["iex", "sip"] = "iex"
 
+    # --- Broker: Trading 212 (Invest / Stocks ISA, UK) --------------------
+    # Real shares, no leverage, and inside an ISA the gains are untaxed — but
+    # the API has NO bracket orders. See docs/trading-212.md.
+    t212_api_key: str = ""
+    t212_api_secret: str = ""
+    t212_demo: bool = True
+    # Pin symbols to T212 tickers: "AAPL=AAPL_US_EQ,VOD=VODl_EQ".
+    # Anything unmapped is resolved from /metadata/instruments.
+    t212_tickers: str = ""
+    # Seconds to wait for a market entry to fill before giving up on placing
+    # its stop. Every second here is a second the position is unprotected.
+    t212_fill_timeout: float = Field(default=20.0, gt=0, le=300)
+
     # --- Broker: IG (IG Index / IG Markets, UK) ---------------------------
     # IG is a spread betting / CFD provider: positions are LEVERAGED and sized
     # in currency-per-point, not in shares. See docs/ig-spread-betting.md.
-    broker: Literal["auto", "alpaca", "ig", "simulated"] = "auto"
+    broker: Literal["auto", "alpaca", "ig", "t212", "simulated"] = "auto"
+    # A second broker to run alongside the first. Both accounts are then
+    # treated as ONE portfolio by the risk gate — see docs/multi-broker.md.
+    # Without this, two brokers means two independent sets of limits, and a
+    # -3% day at each is a -6% day nothing stopped.
+    secondary_broker: Literal["", "alpaca", "ig", "t212", "simulated"] = ""
+    # Which venue handles which symbol: "FTSE=ig,AAPL=t212". Anything unlisted
+    # goes to the primary broker (or to whichever one supports its asset class).
+    broker_routes: str = ""
     ig_api_key: str = ""
     ig_username: str = ""
     ig_password: str = ""
@@ -225,6 +246,8 @@ class Settings(BaseSettings):
             return False
         if broker == "ig":
             return not self.ig_demo
+        if broker == "t212":
+            return not self.t212_demo
         return not self.alpaca_paper
 
     @property
@@ -253,6 +276,39 @@ class Settings(BaseSettings):
         )
 
     @property
+    def has_t212_keys(self) -> bool:
+        return bool(self.t212_api_key) and not is_placeholder(self.t212_api_key)
+
+    @property
+    def t212_base_url(self) -> str:
+        """Demo and live are different hosts. Demo is the default on purpose."""
+        return (
+            "https://demo.trading212.com"
+            if self.t212_demo
+            else "https://live.trading212.com"
+        )
+
+    @property
+    def t212_ticker_map(self) -> dict[str, str]:
+        """Parsed T212_TICKERS. Malformed entries are skipped, not fatal."""
+        mapping: dict[str, str] = {}
+        for pair in self.t212_tickers.split(","):
+            symbol, sep, ticker = pair.partition("=")
+            if sep and symbol.strip() and ticker.strip():
+                mapping[symbol.strip().upper()] = ticker.strip()
+        return mapping
+
+    @property
+    def route_map(self) -> dict[str, str]:
+        """Parsed BROKER_ROUTES: symbol -> broker name."""
+        mapping: dict[str, str] = {}
+        for pair in self.broker_routes.split(","):
+            symbol, sep, broker = pair.partition("=")
+            if sep and symbol.strip() and broker.strip():
+                mapping[symbol.strip().upper()] = broker.strip().lower()
+        return mapping
+
+    @property
     def has_ig_keys(self) -> bool:
         return all(
             bool(v) and not is_placeholder(v)
@@ -270,14 +326,28 @@ class Settings(BaseSettings):
 
     @property
     def active_broker(self) -> str:
-        """Which adapter build_broker should construct."""
+        """Which adapter build_broker should construct as the primary."""
         if self.broker != "auto":
             return self.broker
         if self.has_ig_keys:
             return "ig"
+        if self.has_t212_keys:
+            return "t212"
         if self.has_broker_keys:
             return "alpaca"
         return "simulated"
+
+    @property
+    def broker_names(self) -> list[str]:
+        """Every venue this run will trade through, primary first."""
+        names = [self.active_broker]
+        if self.secondary_broker and self.secondary_broker not in names:
+            names.append(self.secondary_broker)
+        return names
+
+    @property
+    def multi_broker(self) -> bool:
+        return len(self.broker_names) > 1
 
     @property
     def ig_epic_map(self) -> dict[str, str]:
@@ -289,19 +359,28 @@ class Settings(BaseSettings):
                 mapping[symbol.strip().upper()] = epic.strip()
         return mapping
 
+    def is_spread_bet(self, broker: str) -> bool:
+        """
+        True when THAT broker's sizes are a stake per point, not a share count.
+
+        Per-broker rather than global because the two can run side by side: the
+        same scan can route one signal to IG as a £2.50/point spread bet and
+        another to Trading 212 as 40 shares. A single global flag would size
+        one of them in the wrong unit.
+        """
+        return broker == "ig"
+
+    def size_unit_for(self, broker: str) -> str:
+        return f"{self.ig_currency}/point" if self.is_spread_bet(broker) else "shares"
+
     @property
     def spread_betting(self) -> bool:
-        """
-        True when sizes are a stake per point rather than a share count.
-
-        Changes what a 'size' means everywhere downstream, so it is asked once
-        here instead of being inferred from the broker name in five places.
-        """
-        return self.active_broker == "ig"
+        """Whether the PRIMARY broker is a spread betting account."""
+        return self.is_spread_bet(self.active_broker)
 
     @property
     def size_unit(self) -> str:
-        return f"{self.ig_currency}/point" if self.spread_betting else "shares"
+        return self.size_unit_for(self.active_broker)
 
     @property
     def has_llm_key(self) -> bool:

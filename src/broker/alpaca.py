@@ -101,6 +101,7 @@ class AlpacaBroker(Broker):
                     market_price=float(p.get("current_price", 0) or 0),
                     unrealized_pnl=float(p.get("unrealized_pl", 0) or 0),
                     side="long" if qty >= 0 else "short",
+                    venue=self.name,
                 )
             )
         return positions

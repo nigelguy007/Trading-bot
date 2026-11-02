@@ -152,7 +152,7 @@ async def health() -> dict:
         "execution_mode": ctx.settings.execution_mode,
         "model": ctx.llm.model,
         "llm_ready": getattr(ctx.llm, "enabled", True),
-        "broker": ctx.broker.name,
+        "broker": " + ".join(ctx.brokers.names),
         # The broker learns the real account currency at login; fall back to
         # the configured one until then.
         "currency_symbol": _symbol_for(
@@ -176,7 +176,7 @@ EMPTY_PORTFOLIO = {
     "equity": 0.0, "cash": 0.0, "buying_power": 0.0, "day_pnl": 0.0,
     "day_pnl_pct": 0.0, "drawdown_pct": 0.0, "peak_equity": 0.0,
     "exposure": 0.0, "exposure_pct": 0.0, "open_risk": 0.0,
-    "open_risk_pct": 0.0, "positions": [],
+    "open_risk_pct": 0.0, "positions": [], "venues": [], "unreachable": [],
 }
 
 
@@ -203,9 +203,22 @@ async def portfolio() -> dict:
         "exposure_pct": state.exposure_pct,
         "open_risk": state.open_risk,
         "open_risk_pct": state.open_risk_pct,
+        "unreachable": state.unreachable,
+        "venues": [
+            {
+                "name": v.name,
+                "equity": v.account.equity,
+                "cash": v.account.cash,
+                "exposure": v.exposure,
+                "positions": len(v.positions),
+                "error": v.error,
+            }
+            for v in state.venues
+        ],
         "positions": [
             {
                 "symbol": p.symbol,
+                "venue": p.venue,
                 "qty": p.qty,
                 "avg_entry": p.avg_entry,
                 "market_price": p.market_price,
@@ -332,6 +345,9 @@ DASHBOARD_HTML = """<!doctype html>
 <h2>Open positions</h2>
 <div class="wrap"><table id="positions"></table></div>
 
+<h2 id="venues-heading" style="display:none">Venues</h2>
+<div class="wrap"><table id="venues"></table></div>
+
 <h2>Recent signals</h2>
 <div class="wrap"><table id="signals"></table></div>
 
@@ -383,6 +399,15 @@ async function refresh() {
        markets or produce new signals yet. Add a key with
        <code>./start.sh setkey</code> and restart. Backtesting works without one.</div>`;
     }
+    if ((pf.unreachable || []).length) {
+      banners +=
+      `<div class="banner"><b>Trading halted — cannot reach ${esc(pf.unreachable.join(", "))}.</b><br>
+       The figures below are missing ${pf.unreachable.length > 1 ? "those accounts" : "that account"},
+       so equity and open risk are understated and no new trade can be sized
+       safely. Existing positions and their broker-side stops are unaffected.
+       Trading resumes by itself once
+       ${pf.unreachable.length > 1 ? "they answer" : "the venue answers"} again.</div>`;
+    }
     if (pf.error) {
       banners +=
       `<div class="banner"><b>Cannot reach the broker (${esc(health.broker)}).</b><br>
@@ -420,12 +445,31 @@ async function refresh() {
         </tr>`;
       }));
 
+    const multi = (pf.venues || []).length > 1;
+
     table(document.getElementById("positions"),
-      ["Symbol","Qty","Avg entry","Price","Unrealised"],
+      multi
+        ? ["Symbol", {t:"Venue", c:"hide-sm"}, "Qty", "Avg entry", "Price", "Unrealised"]
+        : ["Symbol","Qty","Avg entry","Price","Unrealised"],
       pf.positions.map(p => `<tr>
-          <td>${esc(p.symbol)}</td><td>${p.qty}</td>
+          <td>${esc(p.symbol)}</td>
+          ${multi ? `<td class="hide-sm">${esc(p.venue || "")}</td>` : ""}
+          <td>${p.qty}</td>
           <td>${p.avg_entry.toFixed(2)}</td><td>${p.market_price.toFixed(2)}</td>
           <td class="${cls(p.unrealized_pnl)}">${money(p.unrealized_pnl)}</td></tr>`));
+
+    // Only worth showing when there is more than one. With a single broker
+    // the venue table just repeats the cards above it.
+    document.getElementById("venues-heading").style.display = multi ? "" : "none";
+    table(document.getElementById("venues"),
+      multi ? ["Venue","Equity","Cash",{t:"Exposure", c:"hide-sm"},"Positions","Status"] : [],
+      multi ? (pf.venues || []).map(v => `<tr>
+          <td>${esc(v.name)}</td>
+          <td>${money(v.equity)}</td><td>${money(v.cash)}</td>
+          <td class="hide-sm">${money(v.exposure)}</td>
+          <td>${v.positions}</td>
+          <td class="${v.error ? "neg" : ""}">${v.error ? esc(v.error.slice(0,80)) : "ok"}</td>
+        </tr>`) : []);
 
     table(document.getElementById("signals"),
       [{t:"Time", c:"hide-sm"}, "Symbol", {t:"Dir", c:"hide-sm"},

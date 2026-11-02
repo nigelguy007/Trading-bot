@@ -283,6 +283,28 @@ class TradeJournal:
         )
         self.conn.commit()
 
+    def start_of_day_equity(self, on_date: str | None = None) -> float | None:
+        """
+        The first equity reading recorded today, or None if there isn't one.
+
+        This exists because not every broker reports a start-of-day figure.
+        Alpaca has `last_equity`; Trading 212 has nothing of the kind and IG's
+        is an approximation. Without a baseline the daily loss limit silently
+        reads 0% every day and never fires, which is the worst possible
+        failure for a circuit breaker — it looks like it's working.
+
+        The journal already writes an equity row on every cycle, so the first
+        of today is a sound baseline whenever the bot has been running.
+        """
+        # Timestamps are ISO with a +00:00 suffix, so match on the date part
+        # rather than string-comparing against a crafted upper bound.
+        day = on_date or _now()[:10]
+        row = self.conn.execute(
+            "SELECT equity FROM equity WHERE substr(ts,1,10) = ? ORDER BY ts LIMIT 1",
+            (day,),
+        ).fetchone()
+        return float(row["equity"]) if row else None
+
     def equity_curve(self, limit: int = 1000) -> list[dict]:
         rows = self.conn.execute(
             "SELECT * FROM (SELECT * FROM equity ORDER BY ts DESC LIMIT ?) ORDER BY ts",

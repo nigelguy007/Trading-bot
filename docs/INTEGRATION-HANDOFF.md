@@ -48,8 +48,11 @@ This is the table to plan your integration from.
 | `src/broker/base.py` | 40 | — (ABC) | Implement against your broker |
 | `src/broker/alpaca.py` | 190 | Alpaca REST | Reference impl — likely discard |
 | `src/broker/ig.py` | 600 | IG REST | Reference impl for a **geared** broker — read it if your platform trades derivatives |
+| `src/broker/t212.py` | 520 | Trading 212 REST | Reference impl for a broker with **no bracket orders** — read it if yours lacks them too |
 | `src/data/market_data.py` | 330 | Alpaca / IG REST | Reference impl — likely discard |
-| `src/execution.py` | 161 | `Broker`, journal, approvals, alerts | Rewire to your order path |
+| `src/broker/registry.py` | 200 | the adapters | Symbol/asset-class routing across venues |
+| `src/portfolio.py` | 260 | `Broker`(s), journal | **Combined book across venues** — port this if you run more than one account |
+| `src/execution.py` | 180 | `Broker`, journal, approvals, alerts | Rewire to your order path |
 | `src/pipeline.py` | 228 | everything | Read as a spec, not as code to port |
 | `src/alerts/` | 335 | Discord/Telegram HTTP | Swap for your notifier |
 | `src/webhook_server.py` | 396 | FastAPI | Optional |
@@ -299,7 +302,21 @@ Ordered by how likely each is to bite you.
    synthetic CSVs from `scripts/make_sample_data.py`, which is *random data* — any P&L
    it produces is meaningless and the script says so in its own output.
 
-3. **The IG adapter has never run against a real IG account.** It is written to
+3. **Multi-account risk is the subtle one.** If your platform holds more than
+   one account, read `src/portfolio.py` before reusing the risk gate. Every limit
+   is a percentage of equity, so summing accounts is not cosmetic: two accounts
+   each down 3% is a 6% day that a per-account -3% limit never sees. The module
+   also refuses to trade on a partial read, declines to report a drawdown against
+   an incomplete book, and keeps a bad read out of the equity curve so it cannot
+   become tomorrow's baseline.
+
+4. **Trading 212 cannot attach a stop to an entry.** `t212.py` emulates a bracket
+   (buy, poll for the fill, then place the stop and target separately) and
+   `reconcile()` supplies the OCO the API lacks. If your platform has the same
+   limitation, that pair is the pattern to copy — and the unprotected window
+   between the fill and the stop is a real exposure you must accept consciously.
+
+5. **The IG adapter has never run against a real IG account.** It is written to
    IG's published REST API and tested against a mocked IG (81 tests covering the wire
    format, the asynchronous deal/confirm sequence, closing via `_method: DELETE`, and
    epic resolution), but no real credentials have ever been typed into it. Expect
@@ -307,37 +324,37 @@ Ordered by how likely each is to bite you.
    not handle IG's `scalingFactor` (some FX markets quote x100) or guaranteed stops.
    See [ig-spread-betting.md](ig-spread-betting.md).
 
-4. **Crypto has no bracket orders.** Alpaca does not support them for crypto, so the
+6. **Crypto has no bracket orders.** Alpaca does not support them for crypto, so the
    stop is tracked bot-side only. A process death between fill and stop placement
    leaves an unprotected position. `alpaca.py` logs
    `broker.crypto_no_bracket` when this applies. If your platform supports crypto
    brackets, this gap closes; if not, treat crypto as needing an external stop watcher.
 
-5. **`SimulatedBroker` is not a market simulator.** Fills at the signal price. No
+7. **`SimulatedBroker` is not a market simulator.** Fills at the signal price. No
    slippage, no partial fills, no queue position, no spread. Fine for wiring
    verification, useless for estimating returns.
 
-6. **The backtester tests mechanical rules only, not the AI.** You cannot reproduce
+8. **The backtester tests mechanical rules only, not the AI.** You cannot reproduce
    what a model said six months ago. It does guard lookahead (decisions use bars
    `0..i`, fills at `i+1` open) and assumes stop-before-target when a bar contains
    both — the pessimistic reading. Treat its output as an upper bound.
 
-7. **Journal reconciliation is one-directional.** The bot records what it submitted; it
+9. **Journal reconciliation is one-directional.** The bot records what it submitted; it
    does not poll the broker to confirm what actually filled, or detect a stop that
    triggered while it was asleep. Open positions are read live from the broker, but
    `trades` rows close only when the bot closes them. **If you integrate with a real
    platform, wire fill/stop webhooks into `TradeJournal.close_trade()`** or the metrics
    will drift from reality. This is the largest missing piece for production use.
 
-8. **Approval expiry is wall-clock, not price-based.** A 45-minute-old approval is
+10. **Approval expiry is wall-clock, not price-based.** A 45-minute-old approval is
    refused, but a 5-minute-old approval on a symbol that just gapped is accepted. A
    price-drift check before submission would be a sensible addition.
 
-9. **Single-process, single-user.** The approval store is a JSON file and the journal is
+11. **Single-process, single-user.** The approval store is a JSON file and the journal is
    SQLite with `check_same_thread=False`. Two concurrent writers will race. Move both
    to your platform's database before running more than one instance.
 
-10. **`.gitignore` lesson, since it cost us a package.** A bare `data/` rule also matches
+12. **`.gitignore` lesson, since it cost us a package.** A bare `data/` rule also matches
    `src/data/` and silently excluded that entire package from the first commit — tests
    passed locally against files git was ignoring, and the next clean checkout could not
    import. Fixed in `e5822e9` by anchoring every rule that names a real source

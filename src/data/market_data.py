@@ -329,12 +329,35 @@ def build_market_data(
     nothing, which is the kind of quiet failure that wastes an afternoon.
     """
     if not force_csv:
-        if settings.active_broker == "ig":
+        primary = settings.active_broker
+
+        if primary == "ig":
             if broker is not None and hasattr(broker, "resolve_epic"):
                 return IGMarketData(settings, broker)
             log.warning(
                 "marketdata.ig_without_broker",
                 note="IG is configured but no IG broker was supplied — falling back to CSV",
+            )
+        elif primary == "t212":
+            # Trading 212's public API has NO price endpoint — no quotes, no
+            # candles, nothing. So prices come from Alpaca, which is sound
+            # here in a way it would not be for IG: T212 holds the actual
+            # share, and Alpaca quotes that same share at the same scale.
+            # (An IG spread bet can be quoted in a different unit entirely,
+            # which is why that combination is not offered.)
+            if settings.has_broker_keys:
+                log.info(
+                    "marketdata.t212_uses_alpaca",
+                    note="Trading 212 has no price API; using Alpaca bars for the "
+                         "same underlying shares",
+                )
+                return AlpacaMarketData(settings)
+            log.warning(
+                "marketdata.t212_without_prices",
+                note="Trading 212 has no price API and no Alpaca keys are set, so "
+                     "there is nothing to scan. Add ALPACA_API_KEY / "
+                     "ALPACA_SECRET_KEY (free paper keys are enough — they are "
+                     "used for DATA only) or supply CSVs.",
             )
         elif settings.has_broker_keys:
             return AlpacaMarketData(settings)

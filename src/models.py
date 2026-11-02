@@ -191,16 +191,31 @@ class RiskDecision:
 
 @dataclass
 class Position:
+    """
+    One open position.
+
+    `venue` is the broker holding it. With a single broker it is noise; with
+    two it is the difference between "5 open positions" and "5 on each, which
+    nothing checked". Everything that aggregates positions must carry it, and
+    anything that closes one needs it to know who to ask.
+    """
+
     symbol: str
     qty: float
     avg_entry: float
     market_price: float
     unrealized_pnl: float
     side: Direction = "long"
+    venue: str = ""
 
     @property
     def notional(self) -> float:
         return abs(self.qty) * self.market_price
+
+    @property
+    def key(self) -> str:
+        """Unique across venues: the same ticker can be held at two brokers."""
+        return f"{self.venue}:{self.symbol}" if self.venue else self.symbol
 
 
 @dataclass

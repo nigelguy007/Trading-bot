@@ -53,7 +53,8 @@ talks straight to your money — the risk rules are the gate.**
 | Risk gate | `src/risk.py` | Hard limits — every rule is a reject, not a score |
 | Sizing | `src/sizing.py` | Size from stop distance, never gut feel |
 | Approvals | `src/approvals.py` | Human-in-the-loop queue, with expiry |
-| Brokers | `src/broker/` | Alpaca (shares), IG (UK spread bets), and a local simulator |
+| Brokers | `src/broker/` | Alpaca (US shares), IG (UK spread bets), Trading 212 (shares/ISA), simulator |
+| Portfolio | `src/portfolio.py` | One combined book across every venue — the risk rules see the whole thing |
 | Execution | `src/execution.py` | Bracket orders; the only code that spends money |
 | Journal | `src/journal.py` | SQLite record of signals, orders, trades, equity |
 | Metrics | `src/metrics.py` | Win rate, avg R, expectancy, profit factor, max DD |
@@ -132,6 +133,7 @@ real account.
 | Anthropic | The analysis brain | console.anthropic.com |
 | Alpaca | Paper/live trades + market data | alpaca.markets → **use PAPER keys first** |
 | IG (UK) | Spread bets + market data | ig.com → My IG → Settings → API keys. **Leveraged** — read [docs/ig-spread-betting.md](docs/ig-spread-betting.md) first |
+| Trading 212 (UK) | Real shares, Invest/Stocks ISA | In-app → Settings → API (Beta). **No bracket orders** — read [docs/trading-212.md](docs/trading-212.md) first |
 | NewsAPI | Headlines for context | newsapi.org |
 | Discord | Trade alerts | Server Settings → Integrations → Webhook |
 | Telegram | Trade alerts + approve/deny buttons | @BotFather → new bot → token |
@@ -149,21 +151,39 @@ instead of failing with a 401. `doctor` tells you which are still placeholders.
 `BROKER=auto` (the default) picks IG if IG keys are set, else Alpaca, else the
 local simulator. Set it explicitly to pin one.
 
-| | Alpaca | IG (IG Index / IG Markets) |
-|---|---|---|
-| Available in the UK | Yes | Yes, it's a UK firm |
-| What you trade | US shares and crypto, unleveraged | Spread bets / CFDs on shares, indices, FX, commodities |
-| Size is | A share count | A stake **per point** |
-| Leverage | None | Always, built in |
-| Demo | Unleveraged paper shares | Spread bet / CFD only — **leveraged** |
-| Symbols | Tickers (`AAPL`) | "Epics" (`UA.D.AAPL.CASH.IP`) |
-| Crypto | Yes | No, not for UK retail clients |
+| | Alpaca | IG | Trading 212 |
+|---|---|---|---|
+| Available in the UK | Yes | Yes, a UK firm | Yes, a UK firm |
+| What you trade | US shares + crypto | Spread bets / CFDs | Real shares and ETFs |
+| Size is | A share count | A stake **per point** | A share count |
+| Leverage | None | Always | None (Invest/ISA) |
+| Stop attached to the entry | Yes | Yes, best of the three | **No** — placed after the fill |
+| UK tax wrapper | No | Spread bets outside CGT | **Stocks ISA** |
+| Symbols | `AAPL` | Epics (`UA.D.AAPL.CASH.IP`) | `AAPL_US_EQ` |
+| Crypto | Yes | No | No |
+| Its own price data | Yes | Yes, but rationed weekly | **None** — uses Alpaca |
 
-Alpaca is the safer first step precisely because it is unleveraged: the same
-mistake costs you less. If you want IG — a UK-regulated firm, GBP accounts, UK
-market coverage, and spread bet profits currently outside CGT and stamp duty —
-read **[docs/ig-spread-betting.md](docs/ig-spread-betting.md)** first. It is not
-a drop-in swap, and the risk profile is genuinely different.
+Unleveraged is the safer first step, because the same mistake costs you less.
+That means Alpaca or Trading 212. Each has one thing to read first:
+**[docs/ig-spread-betting.md](docs/ig-spread-betting.md)** for IG's leverage, and
+**[docs/trading-212.md](docs/trading-212.md)** for the fact that T212 cannot
+attach a stop to an entry.
+
+### Running two at once
+
+`SECONDARY_BROKER` runs a second venue alongside the first, and the two are
+treated as **one portfolio** — the daily stop, drawdown pause, position count
+and correlation cap all apply to the combined book:
+
+```
+BROKER=ig
+SECONDARY_BROKER=t212
+BROKER_ROUTES=FTSE=ig,AAPL=t212
+```
+
+This matters more than it sounds. Run two bots instead and you get two
+independent sets of limits: a -3% day at each venue is a -6% day that neither
+daily stop ever saw. See **[docs/multi-broker.md](docs/multi-broker.md)**.
 
 ### Check the setup
 
@@ -394,6 +414,10 @@ break.
 | IG: `ATTACHED_ORDER_LEVEL_ERROR` | The stop is inside that market's minimum stop distance. `doctor --check-apis` prints it. |
 | IG: price allowance exhausted | It is a **weekly** quota. Shorten `WATCHLIST` to 3-5 symbols and raise `SCAN_INTERVAL_MINUTES`. |
 | IG: size refused as too small | A small account with a wide stop can't meet IG's minimum stake. The bot refuses rather than rounding up and over-risking. |
+| T212: nothing to scan | Trading 212 has no price API. Add free Alpaca PAPER keys — they're used for DATA only. `doctor` fails on this. |
+| T212: `broker.t212_UNPROTECTED_POSITIONS` | A position is open with no resting stop, from a crash between the entry and its stop. Place one in the app or close it. |
+| T212: short signals skipped | Invest/ISA accounts are long only. Route shorts to IG or Alpaca, or filter them upstream. |
+| Two brokers, limits feel wrong | Check `doctor` says "treated as ONE portfolio". Two separate bot instances do NOT share limits. |
 | Strategy bug | Everything is logged to `logs/bot.jsonl`; test one piece at a time. |
 | Fable 5 returns 400 | It requires 30-day data retention on your org. Set `CLAUDE_MODEL=claude-opus-5`. |
 | Going live too fast | Back to paper. |
@@ -410,13 +434,19 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-251 tests, no network calls. They cover the parts where being wrong costs
+334 tests, no network calls. They cover the parts where being wrong costs
 money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
 approval gate (including that alert mode really does order nothing and that a
 double-tap can't double-order), journal R-multiples, backtest lookahead guards,
 the IG wire format against a mocked IG — the deal/confirm sequence, the
-never-resubmit-a-write rule, and the unconfirmed-deal case — and the full
-pipeline end-to-end against a stubbed model.
+never-resubmit-a-write rule, and the unconfirmed-deal case — the Trading 212
+entry/stop/target sequence and its orphan-order reconciliation, combined risk
+accounting across two venues (including that a -3% day at each really does
+trip one -3% limit), and the full pipeline end-to-end against a stubbed model.
+
+The Trading 212 request bodies are additionally checked against T212's own
+OpenAPI document, vendored at `tests/fixtures/t212-openapi.json`, so a field
+renamed upstream fails a test rather than an order.
 
 ---
 

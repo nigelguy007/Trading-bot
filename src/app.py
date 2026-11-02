@@ -14,7 +14,7 @@ from src.ai.journal_review import JournalReviewer
 from src.alerts.router import AlertRouter
 from src.approvals import ApprovalStore
 from src.broker.base import Broker
-from src.broker.registry import BrokerRouter, build_broker
+from src.broker.registry import BrokerRouter, build_router
 from src.config import Settings, get_settings
 from src.data.market_data import MarketDataProvider, build_market_data
 from src.data.news import NewsClient
@@ -84,6 +84,18 @@ def build_app(
             note="This process can place REAL orders with REAL money.",
         )
 
+    if settings.multi_broker:
+        log.info(
+            "app.multi_broker",
+            venues=settings.broker_names,
+            routes=settings.route_map or "none — everything to the primary",
+            note=(
+                "both accounts are treated as ONE portfolio: the daily stop, "
+                "drawdown pause, position count and correlation cap all apply "
+                "to the combined book, not to each venue separately"
+            ),
+        )
+
     if settings.spread_betting:
         log.warning(
             "app.SPREAD_BETTING",
@@ -126,9 +138,12 @@ def build_app(
         )
 
     journal = TradeJournal(settings.journal_db)
-    broker = build_broker(settings, force_simulated=force_simulated)
-    brokers = BrokerRouter(broker)
-    portfolio = PortfolioManager(broker, settings, journal)
+    brokers = build_router(settings, force_simulated=force_simulated)
+    broker = brokers.default
+    # The ROUTER, not one broker: equity, positions, exposure and open risk
+    # are summed across every venue before any risk rule reads them. Hand it
+    # a single broker and two accounts become two independent sets of limits.
+    portfolio = PortfolioManager(brokers, settings, journal)
     # `force_simulated` means "run entirely locally" — a simulated broker that
     # still fetches live prices would fail on the first missing key.
     market_data = build_market_data(settings, force_csv=force_simulated, broker=broker)
@@ -152,7 +167,7 @@ def build_app(
 
     analyst = Analyst(llm, settings)
     reviewer = JournalReviewer(llm)
-    risk = RiskManager(settings, portfolio)
+    risk = RiskManager(settings, portfolio, brokers)
     alerts = AlertRouter(settings)
     approvals = ApprovalStore(
         settings.data_path / "approvals.json", settings.approval_ttl_minutes

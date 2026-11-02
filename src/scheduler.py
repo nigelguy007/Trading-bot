@@ -52,6 +52,14 @@ class BotScheduler:
             log.debug("scheduler.market_closed_skip")
             return
         try:
+            # Repair anything a broker's API cannot do atomically before
+            # trading again — on Trading 212 that means cancelling the stop
+            # left resting after a target filled, and flagging any position
+            # that has no stop at all.
+            repairs = self.ctx.execution.reconcile()
+            if any(v.get("cancelled") or v.get("unprotected") for v in repairs.values()):
+                log.info("scheduler.reconciled", repairs=repairs)
+
             result = self.ctx.pipeline.run_cycle()
             log.info("scheduler.cycle_done", summary=result.summary())
         except Exception:

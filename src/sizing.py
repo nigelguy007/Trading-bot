@@ -37,9 +37,18 @@ def calculate_size(
     *,
     buying_power: float | None = None,
     allow_fractional: bool | None = None,
+    venue: str | None = None,
 ) -> PositionSizing:
-    """Size a signal against account equity. Returns 0 shares if it can't be sized."""
-    unit = settings.size_unit
+    """
+    Size a signal against account equity. Returns 0 shares if it can't be sized.
+
+    `venue` is the broker this signal is actually going to. It matters because
+    two brokers can be live at once and they do not share a unit: the same
+    equity and the same stop produce 40 shares at Trading 212 and £2.50 a
+    point at IG. Defaults to the primary broker when nothing says otherwise.
+    """
+    venue = venue or settings.active_broker
+    unit = settings.size_unit_for(venue)
     risk_per_share = signal.risk_per_share
     if risk_per_share <= 0 or equity <= 0 or signal.entry <= 0:
         return PositionSizing(0, 0, risk_per_share, 0, 0, capped_by="invalid inputs", unit=unit)
@@ -47,7 +56,7 @@ def calculate_size(
     risk_budget = equity * settings.risk_per_trade_pct / 100.0
     raw_shares = risk_budget / risk_per_share
 
-    if settings.spread_betting:
+    if settings.is_spread_bet(venue):
         return _size_spread_bet(signal, equity, settings, raw_shares, risk_per_share, buying_power)
 
     capped_by = ""
@@ -95,7 +104,7 @@ def _size_spread_bet(
     of five or more. The gearing cap does that job instead, and IG rejects the
     deal outright if the margin genuinely is not there.
     """
-    unit = settings.size_unit
+    unit = settings.size_unit_for("ig")
     capped_by = ""
 
     # Cap 1 — gearing. Exposure is stake x price, and may exceed equity, but

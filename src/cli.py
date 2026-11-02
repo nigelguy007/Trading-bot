@@ -81,39 +81,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     else:
         bad.append("ANTHROPIC_API_KEY is empty — the analysis brain cannot run")
 
-    if settings.active_broker == "ig":
-        ok.append(
-            f"broker: IG ({'DEMO' if settings.ig_demo else 'LIVE'}) — "
-            f"sizes in {settings.size_unit}"
-        )
-        warn.append(
-            "IG positions are LEVERAGED spread bets, not shares. Exposure is "
-            f"capped at {settings.ig_max_exposure_pct:g}% of equity. "
-            "Read docs/ig-spread-betting.md before going live."
-        )
-        if not settings.ig_epic_map:
-            warn.append(
-                "no IG_EPICS mapping — every symbol will be resolved by IG's own "
-                "market search, which can pick the wrong market. Pin them, e.g. "
-                "IG_EPICS=AAPL=UA.D.AAPL.CASH.IP"
-            )
-        else:
-            ok.append(f"{len(settings.ig_epic_map)} IG epic(s) pinned")
-        if settings.crypto_symbols:
-            warn.append(
-                "CRYPTO_WATCHLIST is set but IG offers no crypto to UK retail "
-                "clients — those signals will be refused"
-            )
-    elif is_placeholder(settings.alpaca_api_key) or is_placeholder(settings.alpaca_secret_key):
-        warn.append(
-            "ALPACA keys are still template placeholders — treated as absent, so the "
-            "bot uses the local simulator and CSV prices. Paste real PAPER keys to "
-            "trade against Alpaca."
-        )
-    elif settings.has_broker_keys:
-        ok.append("Alpaca keys present")
-    else:
-        warn.append("no broker keys — the bot will use the local simulator and CSV data")
+    _check_brokers(settings, ok, warn, bad)
 
     if settings.news_api_key:
         ok.append("NewsAPI key present")
@@ -147,6 +115,97 @@ def cmd_doctor(args: argparse.Namespace) -> int:
 
     _print_doctor(ok, warn, bad)
     return 1 if bad else 0
+
+
+def _check_brokers(settings: Settings, ok: list, warn: list, bad: list) -> None:
+    """Report every configured venue, and how they fit together."""
+    venues = settings.broker_names
+
+    if settings.multi_broker:
+        ok.append(
+            f"brokers: {' + '.join(venues)} — treated as ONE portfolio "
+            "(the daily stop, drawdown pause and position caps apply to the "
+            "combined book, not to each venue)"
+        )
+        routed = set(settings.route_map.values())
+        unknown = routed - set(venues)
+        if unknown:
+            bad.append(
+                f"BROKER_ROUTES points at {', '.join(sorted(unknown))}, which "
+                f"{'is' if len(unknown) == 1 else 'are'} not configured. Those "
+                f"symbols would silently go to {venues[0]} instead."
+            )
+        elif not settings.route_map:
+            warn.append(
+                f"no BROKER_ROUTES set, so every symbol goes to {venues[0]}. "
+                f"{venues[1]} will be read for risk but never traded. Set e.g. "
+                f"BROKER_ROUTES=AAPL={venues[1]}"
+            )
+        else:
+            ok.append(f"{len(settings.route_map)} symbol route(s) configured")
+
+    for venue in venues:
+        if venue == "ig":
+            ok.append(
+                f"  IG ({'DEMO' if settings.ig_demo else 'LIVE'}) — "
+                f"sizes in {settings.size_unit_for('ig')}"
+            )
+            warn.append(
+                "IG positions are LEVERAGED spread bets, not shares. Exposure is "
+                f"capped at {settings.ig_max_exposure_pct:g}% of equity. "
+                "Read docs/ig-spread-betting.md before going live."
+            )
+            if settings.ig_epic_map:
+                ok.append(f"  {len(settings.ig_epic_map)} IG epic(s) pinned")
+            else:
+                warn.append(
+                    "no IG_EPICS mapping — every symbol will be resolved by IG's own "
+                    "market search, which can pick the wrong market. Pin them, e.g. "
+                    "IG_EPICS=AAPL=UA.D.AAPL.CASH.IP"
+                )
+            if settings.crypto_symbols:
+                warn.append(
+                    "CRYPTO_WATCHLIST is set but IG offers no crypto to UK retail "
+                    "clients — those signals will be refused"
+                )
+
+        elif venue == "t212":
+            ok.append(
+                f"  Trading 212 ({'DEMO' if settings.t212_demo else 'LIVE'}) — "
+                "real shares, no leverage"
+            )
+            warn.append(
+                "Trading 212 has NO bracket orders. The stop is a separate order "
+                "placed AFTER the entry fills, so there is a brief unprotected "
+                "window, and a crash inside it leaves a position with no stop. "
+                "Read docs/trading-212.md."
+            )
+            if settings.t212_ticker_map:
+                ok.append(f"  {len(settings.t212_ticker_map)} T212 ticker(s) pinned")
+            if not settings.has_broker_keys and settings.active_broker == "t212":
+                bad.append(
+                    "Trading 212 has no price API, and no Alpaca keys are set to "
+                    "supply prices — there is nothing to scan. Add free Alpaca "
+                    "PAPER keys (used for DATA only) or provide CSVs."
+                )
+            elif settings.active_broker == "t212":
+                ok.append("  prices via Alpaca (T212 has no price API of its own)")
+
+        elif venue == "alpaca":
+            if is_placeholder(settings.alpaca_api_key) or is_placeholder(
+                settings.alpaca_secret_key
+            ):
+                warn.append(
+                    "ALPACA keys are still template placeholders — treated as absent, "
+                    "so the bot uses the local simulator and CSV prices."
+                )
+            elif settings.has_broker_keys:
+                ok.append("  Alpaca keys present")
+            else:
+                warn.append("no Alpaca keys — the bot will use the simulator and CSV data")
+
+        elif venue == "simulated":
+            warn.append("no broker keys — the bot will use the local simulator and CSV data")
 
 
 def _check_apis(settings: Settings, ok: list, warn: list, bad: list) -> None:

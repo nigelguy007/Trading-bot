@@ -28,9 +28,20 @@ log = get_logger(__name__)
 
 
 class RiskManager:
-    def __init__(self, settings: Settings, portfolio: PortfolioManager) -> None:
+    def __init__(
+        self, settings: Settings, portfolio: PortfolioManager, brokers=None
+    ) -> None:
         self.settings = settings
         self.portfolio = portfolio
+        # The router, when there is one. Sizing needs it: the same equity and
+        # the same stop mean 40 shares at Trading 212 and £2.50 a point at IG,
+        # so the unit depends on where the signal is actually going.
+        self.brokers = brokers
+
+    def venue_for(self, signal: Signal) -> str:
+        if self.brokers is None:
+            return self.settings.active_broker
+        return self.brokers.venue_for(signal.symbol, signal.asset_class)
 
     # ------------------------------------------------------------------ #
     # Portfolio-level circuit breakers — checked once per cycle, before any
@@ -38,6 +49,20 @@ class RiskManager:
     # ------------------------------------------------------------------ #
     def check_circuit_breakers(self, state: PortfolioState) -> RiskDecision:
         s = self.settings
+
+        if not state.complete:
+            # A venue is down, so equity and the open book are both understated.
+            # Every limit below is a percentage of equity, and the position and
+            # correlation caps count positions we cannot see. Opening anything
+            # now would be sized against a number we know is wrong.
+            reason = (
+                f"Cannot read {', '.join(state.unreachable)} — the portfolio view "
+                "is incomplete, so equity and open risk are understated. No new "
+                "trades until every venue answers. Existing positions and their "
+                "broker-side stops are unaffected."
+            )
+            log.error("risk.venue_unreachable", venues=state.unreachable)
+            return RiskDecision(approved=False, reasons=[reason], halt=True)
 
         if state.drawdown_pct >= s.max_drawdown_pct:
             reason = (
@@ -124,12 +149,14 @@ class RiskManager:
                 f"limit is {s.max_correlated_positions}."
             )
 
-        # --- 7. Sizing, from stop distance ---
+        # --- 7. Sizing, from stop distance, in the target venue's unit ---
+        venue = self.venue_for(signal)
         sizing = calculate_size(
             signal,
             state.account.equity,
             s,
             buying_power=state.account.buying_power,
+            venue=venue,
         )
         if sizing.shares <= 0:
             reasons.append(

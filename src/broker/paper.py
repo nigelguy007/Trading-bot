@@ -82,6 +82,7 @@ class SimulatedBroker(Broker):
                     market_price=price,
                     unrealized_pnl=(price - p["avg_entry"]) * p["qty"],
                     side="long" if p["qty"] >= 0 else "short",
+                    venue=self.name,
                 )
             )
         return out

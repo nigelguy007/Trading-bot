@@ -340,6 +340,7 @@ class IGBroker(Broker):
                     market_price=mark,
                     unrealized_pnl=(mark - level) * signed,
                     side="long" if direction == "BUY" else "short",
+                    venue=self.name,
                 )
             )
         return out

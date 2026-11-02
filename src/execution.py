@@ -49,7 +49,10 @@ class ExecutionEngine:
         return self.settings.execution_mode == "auto"
 
     def _broker_for(self, signal: Signal) -> Broker:
-        return self.brokers.for_asset_class(signal.asset_class)
+        # By symbol, not just asset class: IG and Trading 212 are both
+        # "equity", and which one takes a signal is the entire point of
+        # running them together.
+        return self.brokers.for_signal(signal)
 
     # ------------------------------------------------------------------ #
     def handle_signal(self, signal: Signal, decision: RiskDecision) -> str:
@@ -147,6 +150,26 @@ class ExecutionEngine:
         if result.accepted:
             self.journal.open_trade(signal, sizing.shares, strategy=signal.source)
         return result
+
+    # ------------------------------------------------------------------ #
+    def reconcile(self) -> dict[str, dict]:
+        """
+        Let each broker repair whatever its API cannot do atomically.
+
+        Only Trading 212 needs this today — it has no OCO, so a filled target
+        leaves its stop order resting against shares that are gone. Called on
+        startup and every scheduler cycle.
+        """
+        results: dict[str, dict] = {}
+        for broker in self.brokers.all():
+            fixer = getattr(broker, "reconcile", None)
+            if not callable(fixer):
+                continue
+            try:
+                results[broker.name] = fixer()
+            except Exception as exc:  # pragma: no cover - never fatal
+                log.warning("execution.reconcile_failed", venue=broker.name, error=str(exc))
+        return results
 
     # ------------------------------------------------------------------ #
     def close_position(self, symbol: str, reason: str = "manual") -> tuple[bool, str]:
