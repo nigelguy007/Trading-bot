@@ -227,6 +227,15 @@ if [ "$COMMAND" = "serve" ]; then
         say  "  Stop it:   press Ctrl-C in the Terminal window running it, or:"
         say  "             ${DIM}pkill -f 'src.cli serve'${OFF}"
         say  ""
+        say  ""
+        # The trap this guard creates: `git pull && bash start.sh` looks like
+        # it worked, but the OLD process is still serving the OLD page, so
+        # the browser shows no change and the pull appears to have done
+        # nothing. Say so here rather than letting it be debugged twice.
+        warn "Just pulled? The running copy is still serving the OLD code."
+        say  "  Stop it and start again to pick up the changes, then reload"
+        say  "  the browser with Cmd-Shift-R."
+        say  ""
         say  "  ${DIM}Two copies means two schedulers: double scanning, double API${OFF}"
         say  "  ${DIM}cost, and in auto mode double orders. Run a second one anyway${OFF}"
         say  "  ${DIM}with:  ALLOW_SECOND_INSTANCE=1 bash start.sh${OFF}"

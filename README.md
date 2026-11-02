@@ -422,6 +422,7 @@ break.
 | Fable 5 returns 400 | It requires 30-day data retention on your org. Set `CLAUDE_MODEL=claude-opus-5`. |
 | `address already in use` after it picked a port | Fixed: the probe now binds exactly as the server does. Pull the latest. |
 | `This bot is ALREADY RUNNING on port N` | A copy is live in another Terminal tab. Open that port, or stop it with `pkill -f 'src.cli serve'`. |
+| Pulled, but the page looks unchanged | The old process is still serving the old code. Ctrl-C it, `bash start.sh` again, then hard-reload with ⌘⇧R. |
 | Terminal stuck at `quote>` | An apostrophe in a pasted command opened a quote. Press Ctrl-C. |
 | `start.sh: unexpected EOF while looking for matching` | Fixed. macOS bash 3.2 mis-parsed a heredoc inside `$(...)`. Pull the latest. |
 | Going live too fast | Back to paper. |
@@ -438,7 +439,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-397 tests, no network calls. They cover the parts where being wrong costs
+398 tests, no network calls. They cover the parts where being wrong costs
 money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
 approval gate (including that alert mode really does order nothing and that a
 double-tap can't double-order), journal R-multiples, backtest lookahead guards,

@@ -233,3 +233,13 @@ def test_it_parses_under_a_real_bash_3_2_when_one_is_available():
         )
         return
     pytest.skip("no bash 3.2 available; the static checks above still ran")
+
+
+def test_the_already_running_notice_mentions_a_stale_pull(script):
+    """
+    The trap the guard creates: `git pull && bash start.sh` prints "already
+    running" and exits, so the OLD process keeps serving the OLD page and
+    the pull looks like it did nothing.
+    """
+    assert "serving the OLD code" in script
+    assert "Cmd-Shift-R" in script
