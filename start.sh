@@ -86,7 +86,14 @@ if [ ! -f .env ]; then
 fi
 
 # --- 5. Run ----------------------------------------------------------------
-COMMAND="${1:-serve}"
+# Default to `serve` when invoked bare. This must rewrite the argument list,
+# not just a variable: the final exec forwards "$@", so setting COMMAND alone
+# left Python with no command at all — it printed usage and exited while the
+# banner above had already claimed the dashboard was starting.
+if [ "$#" -eq 0 ]; then
+    set -- serve
+fi
+COMMAND="$1"
 
 # Write a key into .env without the user having to find and edit a hidden
 # dotfile. Done in Python so a key containing / or \ can't corrupt the file.
