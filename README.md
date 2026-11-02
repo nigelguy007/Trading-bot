@@ -75,16 +75,28 @@ cd Trading-bot
 ```
 
 `start.sh` creates the virtual environment, installs dependencies, creates
-`.env` from the template on first run, and starts the dashboard at
-**http://localhost:8001**. It works from any directory and is safe to re-run.
+`.env` from the template on first run, and starts the bot **in the
+background** at **http://localhost:8001**, then hands your prompt back. It
+works from any directory and is safe to re-run.
+
+Because it runs in the background it keeps going when you close the Terminal
+window. Use `stop` to stop it — not by closing the window.
 
 ```bash
+./start.sh             # start in the background, prints the URL
+./start.sh status      # running? on which port? which build?
+./start.sh stop        # stop it
+./start.sh logs        # follow the server log
 ./start.sh doctor      # check the setup
 ./start.sh setkey      # paste your Anthropic key
 ./start.sh scan        # one pass over the watchlist
 ./start.sh backtest    # works with no API keys at all
-./start.sh             # the dashboard
+./start.sh serve       # run in the foreground instead
 ```
+
+`status` prints the build the running server is on *and* the build your
+checkout is on. If they differ, the server predates your last `git pull` and
+needs `./start.sh stop && ./start.sh` to pick up the new code.
 
 > Run these one per line. Don't paste a `#` comment onto the end of a command —
 > macOS's zsh treats it as arguments, not a comment.

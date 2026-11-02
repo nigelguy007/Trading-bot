@@ -2,7 +2,11 @@
 #
 # One-command launcher. Works from any directory, on macOS and Linux.
 #
-#   ./start.sh              # starts the dashboard at http://localhost:8001
+#   ./start.sh              # starts the bot in the BACKGROUND, prints the URL
+#   ./start.sh status       # is it running, and on which port?
+#   ./start.sh stop         # stop it
+#   ./start.sh logs         # follow the server log
+#   ./start.sh serve        # run in the FOREGROUND (containers, process managers)
 #   ./start.sh doctor       # checks your setup
 #   ./start.sh scan         # one pass over the watchlist
 #   ./start.sh backtest
@@ -91,7 +95,10 @@ fi
 # left Python with no command at all — it printed usage and exited while the
 # banner above had already claimed the dashboard was starting.
 if [ "$#" -eq 0 ]; then
-    set -- serve
+    # Background, not foreground. A bare `./start.sh` that blocks the window
+    # means the bot dies the moment you type anything else in it, and the
+    # browser then refuses to connect for reasons that look like a port bug.
+    set -- start
 fi
 COMMAND="$1"
 
@@ -192,7 +199,34 @@ case "$COMMAND" in
         ;;
 esac
 
-if [ "$COMMAND" = "serve" ]; then
+# --- Background running -----------------------------------------------
+# `serve` runs uvicorn in the FOREGROUND, which means the bot only lives
+# while that Terminal window sits there untouched. Type the next command
+# in the same window and the server dies with it — which looked exactly
+# like "the site keeps refusing to connect" and took far too long to spot.
+#
+# So the default is now to run it in the background and hand back the
+# prompt, with `stop` and `status` to manage it. `serve` is still there
+# for a foreground run in a container or under a process manager.
+PIDFILE="$VENV/.bot.pid"
+PORTFILE="$VENV/.bot.port"
+LOGFILE="logs/server.log"
+
+# The PID of a LIVE background server, or nothing. A stale pidfile left by
+# a crash or a reboot must not read as "running".
+bot_pid() {
+    [ -f "$PIDFILE" ] || return 1
+    BOTPID="$(cat "$PIDFILE" 2>/dev/null)"
+    [ -n "$BOTPID" ] || return 1
+    kill -0 "$BOTPID" 2>/dev/null || return 1
+    printf '%s' "$BOTPID"
+}
+
+health_ok() {
+    curl -fs -m 2 "http://127.0.0.1:$1/api/health" >/dev/null 2>&1
+}
+
+choose_port() {
     WANTED="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
     WANTED="${WANTED:-8001}"
     HOST="$(grep -E '^WEBHOOK_HOST=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
@@ -212,12 +246,104 @@ if [ "$COMMAND" = "serve" ]; then
     PROBE="$("$VPY" scripts/pick_port.py "$WANTED" "$HOST" 2>/dev/null)"
     # Never let a probe failure stop the dashboard starting.
     [ -n "$PROBE" ] || PROBE="$WANTED ok -"
-
-    # "<free-port> <state> <port-of-any-existing-copy|->"
     PORT="$(printf '%s' "$PROBE" | awk '{print $1}')"
     STATE="$(printf '%s' "$PROBE" | awk '{print $2}')"
     RUNNING_ON="$(printf '%s' "$PROBE" | awk '{print $3}')"
+}
 
+report_running() {
+    say ""
+    ok "The bot is running on port $1"
+    say "  Open this:  ${GREEN}http://localhost:$1${OFF}"
+    say ""
+    say "  ${DIM}Stop it:    bash start.sh stop${OFF}"
+    say "  ${DIM}Check it:   bash start.sh status${OFF}"
+    say "  ${DIM}Log:        $LOGFILE${OFF}"
+    say ""
+}
+
+case "$COMMAND" in
+    stop)
+        STOPPED=""
+        if bot_pid >/dev/null; then
+            kill "$BOTPID" 2>/dev/null || true
+            for _ in 1 2 3 4 5 6 7 8 9 10; do
+                kill -0 "$BOTPID" 2>/dev/null || break
+                sleep 1
+            done
+            kill -9 "$BOTPID" 2>/dev/null || true
+            STOPPED="yes"
+        fi
+        # Also catch a copy started before pidfiles existed, or by hand.
+        pkill -f 'src\.cli serve' 2>/dev/null && STOPPED="yes"
+        rm -f "$PIDFILE" "$PORTFILE"
+        if [ -n "$STOPPED" ]; then ok "Stopped."; else say "Nothing was running."; fi
+        exit 0
+        ;;
+    status)
+        RECORDED="$(cat "$PORTFILE" 2>/dev/null || true)"
+        if bot_pid >/dev/null && [ -n "$RECORDED" ] && health_ok "$RECORDED"; then
+            BUILD="$(curl -fs -m 2 "http://127.0.0.1:$RECORDED/api/health" 2>/dev/null \
+                     | sed -n 's/.*"build":"\([^"]*\)".*/\1/p')"
+            ok "Running (pid $BOTPID, build ${BUILD:-unknown})"
+            say "  ${GREEN}http://localhost:${RECORDED}${OFF}"
+            say "  ${DIM}This checkout is at: $(git rev-parse --short HEAD 2>/dev/null || echo unknown)${OFF}"
+            exit 0
+        fi
+        warn "Not running."
+        say  "  Start it:  bash start.sh"
+        [ -f "$LOGFILE" ] && say "  Last log:  $LOGFILE"
+        exit 1
+        ;;
+    logs)
+        [ -f "$LOGFILE" ] || die "No log yet. Start the bot first: bash start.sh"
+        exec tail -n 60 -f "$LOGFILE"
+        ;;
+    start)
+        choose_port
+        if [ "$STATE" = "already-ours" ] && [ -z "${ALLOW_SECOND_INSTANCE:-}" ]; then
+            warn "Already running on port ${RUNNING_ON}."
+            say  "  Open it:    ${GREEN}http://localhost:${RUNNING_ON}${OFF}"
+            say  "  Restart it: ${DIM}bash start.sh stop && bash start.sh${OFF}"
+            say  ""
+            warn "Just pulled? Restart so the new code is served."
+            say  ""
+            exit 0
+        fi
+        if [ "$STATE" = "none-free" ]; then
+            die "Ports ${WANTED}-$((WANTED + 39)) are all in use. Free one, or set
+    WEBHOOK_PORT to something else in .env"
+        fi
+
+        mkdir -p "$(dirname "$LOGFILE")"
+        say ""
+        say "${DIM}Starting in the background...${OFF}"
+        # nohup + & so it survives this shell, the Terminal tab closing, and
+        # whatever you type next. That is the entire point of this command.
+        WEBHOOK_PORT="$PORT" nohup "$VPY" -m src.cli serve >> "$LOGFILE" 2>&1 &
+        echo "$!" > "$PIDFILE"
+        echo "$PORT" > "$PORTFILE"
+
+        for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15 16 17 18 19 20 21 22 23 24 25; do
+            if health_ok "$PORT"; then
+                report_running "$PORT"
+                exit 0
+            fi
+            if ! bot_pid >/dev/null; then break; fi
+            sleep 1
+        done
+
+        rm -f "$PIDFILE" "$PORTFILE"
+        printf '%s✗%s It started but then stopped. The last 25 lines:\n\n' "$RED" "$OFF" >&2
+        tail -n 25 "$LOGFILE" >&2
+        say "" >&2
+        say "  Full log: $LOGFILE" >&2
+        exit 1
+        ;;
+esac
+
+if [ "$COMMAND" = "serve" ]; then
+    choose_port
     say ""
     if [ "$STATE" = "already-ours" ] && [ -z "${ALLOW_SECOND_INSTANCE:-}" ]; then
         # The commonest case by far: a copy left running in another Terminal
