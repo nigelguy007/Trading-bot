@@ -268,3 +268,77 @@ def test_approve_and_deny_survive_on_a_phone(client):
     assert "#pending button { display:block; width:100%;" in html
     # The "nothing yet" row must not be hidden along with the header row.
     assert "#pending tr:first-child:not(:last-child) { display:none; }" in html
+
+
+# ---------------------------------------------------------------------- #
+# The hero's empty state, and knowing which build you are looking at
+# ---------------------------------------------------------------------- #
+# Both of these come from the same incident: the dashboard was reported as
+# "I can't see the hero page" for three rounds. It turned out the hero was
+# rendering correctly all along, but on a fresh install the equity curve
+# behind it had fewer than two points, so the backdrop was wiped to nothing
+# and the frame read as a blank box. Meanwhile there was no way to tell from
+# the browser whether a `git pull` had actually taken effect, so every
+# report was debugged as a port or stale-process problem instead.
+
+
+def test_a_fresh_install_still_draws_something_behind_the_hero(client):
+    """
+    `host.innerHTML = ""` on a thin curve left the top two thirds of the
+    hero genuinely empty, which is indistinguishable from a page that
+    failed to load. Draw a baseline instead.
+    """
+    html = client.get("/").text
+    assert 'host.innerHTML = ""' not in html, (
+        "wiping the hero backdrop makes a fresh install look like a broken page"
+    )
+    assert "No equity history recorded yet" in html
+
+
+def test_the_empty_hero_says_why_it_is_empty(client):
+    """Empty-because-new and empty-because-broken must not look the same."""
+    html = client.get("/").text
+    assert 'id="hero-note"' in html
+    assert "The equity curve draws itself here" in html
+    assert "anchor-note" in html
+
+
+def test_the_empty_baseline_is_not_coloured_as_a_gain_or_a_loss(client):
+    """
+    A green line across a brand new account implies a rise that has not
+    happened. The no-history baseline is neutral and dashed.
+    """
+    html = client.get("/").text
+    note = html[html.index("No equity history recorded yet") - 400:
+                html.index("No equity history recorded yet") + 400]
+    assert "stroke-dasharray" in note
+    assert "var(--pos)" not in note and "var(--neg)" not in note
+
+
+def test_health_reports_the_build(client):
+    """
+    So "did my pull take effect?" is answerable from the page rather than
+    by guessing at which process is serving which port.
+    """
+    body = client.get("/api/health").json()
+    assert "build" in body
+    assert isinstance(body["build"], str) and body["build"]
+
+
+def test_the_build_is_shown_on_the_page(client):
+    html = client.get("/").text
+    assert "build ${health.build" in html
+
+
+def test_the_build_id_degrades_instead_of_raising(monkeypatch):
+    """A tarball download with no .git must still serve the dashboard."""
+    import subprocess as sp
+
+    from src import webhook_server as ws
+
+    ws.build_id.cache_clear()
+    monkeypatch.setattr(sp, "run", lambda *a, **k: (_ for _ in ()).throw(OSError("no git")))
+    try:
+        assert ws.build_id() == "unknown"
+    finally:
+        ws.build_id.cache_clear()

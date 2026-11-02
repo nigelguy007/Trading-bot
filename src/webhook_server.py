@@ -17,7 +17,10 @@ order.
 from __future__ import annotations
 
 import hmac
+import subprocess
 from contextlib import asynccontextmanager
+from functools import lru_cache
+from pathlib import Path
 from typing import Any, Optional
 
 from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
@@ -37,6 +40,39 @@ def get_context() -> AppContext:
     if _ctx is None:  # pragma: no cover - guarded by the lifespan
         raise RuntimeError("application context is not initialised")
     return _ctx
+
+
+@lru_cache(maxsize=1)
+def build_id() -> str:
+    """
+    The commit this server is running, shown on the page.
+
+    This exists because "I pulled but the page hasn't changed" took three
+    rounds to diagnose and the answer was never visible from the browser:
+    an old process kept serving old HTML while `git pull` reported success.
+    A short SHA in the header settles it in one glance — compare it to
+    `git rev-parse --short HEAD` and you know whether the running process
+    predates the pull.
+
+    Cached: this is read on every /api/health poll and the commit cannot
+    change under a running process.
+    """
+    try:
+        out = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=Path(__file__).resolve().parent.parent,
+            capture_output=True,
+            text=True,
+            timeout=5,
+            check=False,
+        )
+        if out.returncode == 0 and out.stdout.strip():
+            return out.stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        # No git, no repo, or a tarball download. The page still works; it
+        # just cannot name the commit.
+        pass
+    return "unknown"
 
 
 @asynccontextmanager
@@ -148,6 +184,7 @@ async def health() -> dict:
     ctx = get_context()
     return {
         "status": "ok",
+        "build": build_id(),
         "mode": "live" if ctx.settings.live_trading_enabled else "paper",
         "execution_mode": ctx.settings.execution_mode,
         "model": ctx.llm.model,
@@ -433,6 +470,16 @@ DASHBOARD_HTML = """<!doctype html>
     background:linear-gradient(to bottom,
       rgba(6,6,16,.25) 0%, rgba(6,6,16,.55) 45%, rgba(6,6,16,.93) 100%);
   }
+  /* Shown only before there is a curve to draw. The Anchor composition
+     leaves the upper frame empty on purpose, but "empty because the data
+     has not arrived" and "empty because the page is broken" look identical
+     — and were reported as the latter. One quiet line tells them apart. */
+  .anchor-note {
+    position:absolute; z-index:1; left:22px; right:22px; top:40%;
+    transform:translateY(-50%); text-align:center;
+    color:var(--accent-dim); font-size:12.5px; font-weight:400;
+    letter-spacing:.01em; pointer-events:none;
+  }
   .anchor-marks {
     position:relative; z-index:1; display:flex; justify-content:space-between;
     padding:18px 22px 0; font-size:11px; letter-spacing:.1em;
@@ -635,6 +682,7 @@ DASHBOARD_HTML = """<!doctype html>
 <section class="anchor" id="hero">
   <div class="anchor-bg" id="equity-chart"></div>
   <div class="anchor-veil"></div>
+  <p class="anchor-note" id="hero-note" hidden></p>
 
   <div class="anchor-marks">
     <span id="mark-left">&nbsp;</span>
@@ -710,9 +758,38 @@ function kpi(label, value, klass="") {
 // make it depend on the internet to draw a line.
 function sparkline(points) {
   const host = document.getElementById("equity-chart");
-  // The curve IS the hero backdrop, so an empty one leaves the gradient
-  // alone rather than putting an apologetic message in the middle of it.
-  if (points.length < 2) { host.innerHTML = ""; return; }
+  // The curve IS the hero backdrop. Wiping it to nothing on a fresh install
+  // left the top two thirds of the frame genuinely blank, and the whole hero
+  // read as an empty box — indistinguishable from a page that had failed to
+  // load, which is exactly how it was reported. A single reading is not a
+  // curve, but it IS a baseline, so draw that: dashed and in the neutral
+  // stroke colour, because a solid green or red line across a brand new
+  // account would imply a trend that has not happened yet.
+  const note = document.getElementById("hero-note");
+  if (points.length < 2) {
+    const MID = (40 + 340 * 0.62) / 2;
+    host.innerHTML = `
+    <svg class="chart" viewBox="0 0 1000 340" preserveAspectRatio="none" role="img"
+         aria-label="No equity history recorded yet">
+      <line x1="0" y1="${MID.toFixed(1)}" x2="1000" y2="${MID.toFixed(1)}"
+            stroke="var(--accent-dim)" stroke-width="1.5" stroke-dasharray="2 9"
+            vector-effect="non-scaling-stroke" opacity=".85"/>
+    </svg>`;
+    const m = document.getElementById("mark-right");
+    if (m) {
+      m.textContent += points.length
+        ? " · no history yet"
+        : " · no equity recorded yet";
+    }
+    if (note) {
+      note.textContent = points.length
+        ? "The equity curve draws itself here once there is more than one reading."
+        : "The equity curve draws itself here once the bot records its first reading.";
+      note.hidden = false;
+    }
+    return;
+  }
+  if (note) note.hidden = true;
   const W = 1000, H = 340, PAD = 0;
   const ys = points.map(p => p.equity);
   const lo = Math.min(...ys), hi = Math.max(...ys);
@@ -773,8 +850,11 @@ async function refresh() {
 
     CUR = health.currency_symbol || "$";
 
+    // The build is here so "did my pull actually take effect?" is answerable
+    // from the page itself rather than by guessing at ports and processes.
     document.getElementById("status").textContent =
-      `${health.symbols.length} symbols · ${health.execution_mode} mode · ${health.model}`;
+      `${health.symbols.length} symbols · ${health.execution_mode} mode · ` +
+      `${health.model} · build ${health.build || "unknown"}`;
 
     const badge = health.mode === "live"
       ? '<span class="badge live">LIVE MONEY</span>'
