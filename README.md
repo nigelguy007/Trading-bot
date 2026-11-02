@@ -27,7 +27,7 @@ Market Data ──► Indicators ──► News API ──► Claude ──► S
                                         │                                │
                                    alert mode                       auto mode
                                         │                                │
-                                 you approve  ──────────────►  Broker API (Alpaca)
+                                 you approve  ────────────►  Broker API (Alpaca / IG)
                                         │                                │
                                         └──────────► Trade Execution ◄───┘
                                                               │
@@ -43,7 +43,7 @@ talks straight to your money — the risk rules are the gate.**
 
 | Piece | Where | What it does |
 |---|---|---|
-| Market data | `src/data/market_data.py` | Alpaca bars, with a CSV provider for offline work |
+| Market data | `src/data/market_data.py` | Alpaca or IG bars, with a CSV provider for offline work |
 | Indicators | `src/data/indicators.py` | SMA/EMA/RSI/ATR/MACD/Bollinger, pivots, trend |
 | News | `src/data/news.py` | NewsAPI headlines, aggressively cached |
 | Prompts | `src/ai/prompts.py` | The ten prompts, verbatim, plus JSON schemas |
@@ -53,6 +53,7 @@ talks straight to your money — the risk rules are the gate.**
 | Risk gate | `src/risk.py` | Hard limits — every rule is a reject, not a score |
 | Sizing | `src/sizing.py` | Size from stop distance, never gut feel |
 | Approvals | `src/approvals.py` | Human-in-the-loop queue, with expiry |
+| Brokers | `src/broker/` | Alpaca (shares), IG (UK spread bets), and a local simulator |
 | Execution | `src/execution.py` | Bracket orders; the only code that spends money |
 | Journal | `src/journal.py` | SQLite record of signals, orders, trades, equity |
 | Metrics | `src/metrics.py` | Win rate, avg R, expectancy, profit factor, max DD |
@@ -130,6 +131,7 @@ real account.
 |---|---|---|
 | Anthropic | The analysis brain | console.anthropic.com |
 | Alpaca | Paper/live trades + market data | alpaca.markets → **use PAPER keys first** |
+| IG (UK) | Spread bets + market data | ig.com → My IG → Settings → API keys. **Leveraged** — read [docs/ig-spread-betting.md](docs/ig-spread-betting.md) first |
 | NewsAPI | Headlines for context | newsapi.org |
 | Discord | Trade alerts | Server Settings → Integrations → Webhook |
 | Telegram | Trade alerts + approve/deny buttons | @BotFather → new bot → token |
@@ -141,6 +143,27 @@ keeps your keys, alerts and experiments separate from anything real.
 Keys left as template placeholders (`your_paper_key`) are treated as **absent**,
 not as real keys — so an unedited `.env` runs offline against the simulator
 instead of failing with a 401. `doctor` tells you which are still placeholders.
+
+### Which broker
+
+`BROKER=auto` (the default) picks IG if IG keys are set, else Alpaca, else the
+local simulator. Set it explicitly to pin one.
+
+| | Alpaca | IG (IG Index / IG Markets) |
+|---|---|---|
+| Available in the UK | Yes | Yes, it's a UK firm |
+| What you trade | US shares and crypto, unleveraged | Spread bets / CFDs on shares, indices, FX, commodities |
+| Size is | A share count | A stake **per point** |
+| Leverage | None | Always, built in |
+| Demo | Unleveraged paper shares | Spread bet / CFD only — **leveraged** |
+| Symbols | Tickers (`AAPL`) | "Epics" (`UA.D.AAPL.CASH.IP`) |
+| Crypto | Yes | No, not for UK retail clients |
+
+Alpaca is the safer first step precisely because it is unleveraged: the same
+mistake costs you less. If you want IG — a UK-regulated firm, GBP accounts, UK
+market coverage, and spread bet profits currently outside CGT and stamp duty —
+read **[docs/ig-spread-betting.md](docs/ig-spread-betting.md)** first. It is not
+a drop-in swap, and the risk profile is genuinely different.
 
 ### Check the setup
 
@@ -265,7 +288,7 @@ a trap.
 | Stage | What it proves | How |
 |---|---|---|
 | Backtesting | How the rules would have done on past data | `python -m src.cli backtest` |
-| Paper trading | How it behaves live, with fake money | Alpaca paper keys |
+| Paper trading | How it behaves live, with fake money | Alpaca paper keys, or an IG demo account |
 | Forward testing | Real-time results over weeks, still on paper | `python -m src.cli run` |
 | Metrics | Win rate, avg R, max drawdown, profit factor | `python -m src.cli metrics` |
 
@@ -341,11 +364,15 @@ break.
   decides. A setup has to survive an adversary before it becomes a signal.
 - **Portfolio dashboard** — `serve`, then open `http://localhost:8001`.
 - **Mobile approve/deny** — Telegram buttons, above.
-- **Multi-broker routing** — `BrokerRouter` routes by asset class.
+- **Multi-broker routing** — `BrokerRouter` routes by asset class. Set
+  `BROKER=ig` for a UK spread betting account (IG Index / IG Markets); sizes
+  then become a stake per point on **leveraged** positions, so read
+  [docs/ig-spread-betting.md](docs/ig-spread-betting.md) before funding anything.
 - **Sentiment / news as an input** — on by default when `NEWS_API_KEY` is set.
 - **Crypto** — put Alpaca-style pairs in `CRYPTO_WATCHLIST` (e.g. `BTC/USD`).
   Note Alpaca has no bracket orders for crypto, so the stop is tracked bot-side
-  only; the bot warns when this applies.
+  only; the bot warns when this applies. IG has no crypto for UK retail clients
+  at all, and refuses those signals rather than mis-routing them.
 - **AI journaling** — `review` and `optimize` read your closed trades back to
   you and name the recurring mistake.
 
@@ -360,6 +387,13 @@ break.
 | No signals firing | Filters too strict, or the market is flat. Try `--always-analyse` to bypass the mechanical pre-filter. |
 | Install fails | Wrong Python version; use 3.11+ in a fresh venv. |
 | Orders rejected (422) | Paper account not enabled, bad symbol format, or the market is closed. |
+| IG: `error.security.api-key-invalid` | Demo and live IG keys are not interchangeable. Make `IG_DEMO` match the key you generated. |
+| IG: `encryption.required` | Turn off "encrypted passwords" for that key in My IG → Settings → API keys. |
+| IG: `error.security.invalid-details` | `IG_USERNAME` / `IG_PASSWORD` are your IG **web** login, not the API key. The username is case-sensitive. |
+| IG: wrong market traded | A guessed epic. Pin it in `IG_EPICS` — `doctor --check-apis` shows what each symbol resolved to. |
+| IG: `ATTACHED_ORDER_LEVEL_ERROR` | The stop is inside that market's minimum stop distance. `doctor --check-apis` prints it. |
+| IG: price allowance exhausted | It is a **weekly** quota. Shorten `WATCHLIST` to 3-5 symbols and raise `SCAN_INTERVAL_MINUTES`. |
+| IG: size refused as too small | A small account with a wide stop can't meet IG's minimum stake. The bot refuses rather than rounding up and over-risking. |
 | Strategy bug | Everything is logged to `logs/bot.jsonl`; test one piece at a time. |
 | Fable 5 returns 400 | It requires 30-day data retention on your org. Set `CLAUDE_MODEL=claude-opus-5`. |
 | Going live too fast | Back to paper. |
@@ -376,11 +410,13 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-124 tests, no network calls. They cover the parts where being wrong costs
-money: sizing arithmetic, every risk rule, the approval gate (including that
-alert mode really does order nothing and that a double-tap can't double-order),
-journal R-multiples, backtest lookahead guards, and the full pipeline
-end-to-end against a stubbed model.
+251 tests, no network calls. They cover the parts where being wrong costs
+money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
+approval gate (including that alert mode really does order nothing and that a
+double-tap can't double-order), journal R-multiples, backtest lookahead guards,
+the IG wire format against a mocked IG — the deal/confirm sequence, the
+never-resubmit-a-write rule, and the unconfirmed-deal case — and the full
+pipeline end-to-end against a stubbed model.
 
 ---
 

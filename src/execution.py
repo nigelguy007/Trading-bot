@@ -73,7 +73,11 @@ class ExecutionEngine:
             )
             if result.accepted:
                 self.alerts.fill(
-                    signal, decision.sizing.shares, result.broker_order_id, broker.is_paper
+                    signal,
+                    decision.sizing.shares,
+                    result.broker_order_id,
+                    broker.is_paper,
+                    decision.sizing.unit,
                 )
             return status
 
@@ -105,9 +109,13 @@ class ExecutionEngine:
             return False, f"Broker rejected the order: {result.message}"
 
         self.journal.update_signal_status(signal.id, "submitted")
-        self.alerts.fill(signal, sizing.shares, result.broker_order_id, broker.is_paper)
+        self.alerts.fill(
+            signal, sizing.shares, result.broker_order_id, broker.is_paper, sizing.unit
+        )
         venue = "paper" if broker.is_paper else "LIVE"
-        return True, f"Submitted {signal.symbol} {signal.direction} {sizing.shares:g} ({venue})."
+        return True, (
+            f"Submitted {signal.symbol} {signal.direction} {sizing.size_label} ({venue})."
+        )
 
     def deny(self, signal_id: str) -> tuple[bool, str]:
         entry = self.approvals.resolve(signal_id, "denied")
@@ -124,7 +132,7 @@ class ExecutionEngine:
 
     # ------------------------------------------------------------------ #
     def _place(self, signal: Signal, sizing: PositionSizing, broker: Broker) -> OrderResult:
-        if not broker.is_paper and not self.settings.live_trading_enabled:
+        if not broker.is_paper and not self.settings.live_enabled_for(broker.name):
             # Belt and braces: should be unreachable, but this is the one place
             # where being wrong costs real money.
             message = "Live order blocked: the live-trading confirmation is not set."

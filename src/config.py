@@ -67,6 +67,37 @@ class Settings(BaseSettings):
     alpaca_paper: bool = True
     alpaca_data_feed: Literal["iex", "sip"] = "iex"
 
+    # --- Broker: IG (IG Index / IG Markets, UK) ---------------------------
+    # IG is a spread betting / CFD provider: positions are LEVERAGED and sized
+    # in currency-per-point, not in shares. See docs/ig-spread-betting.md.
+    broker: Literal["auto", "alpaca", "ig", "simulated"] = "auto"
+    ig_api_key: str = ""
+    ig_username: str = ""
+    ig_password: str = ""
+    ig_account_id: str = ""
+    ig_demo: bool = True
+    # IG rejects bursts; its published guidance is a handful of requests per
+    # few seconds. Keep a floor between trading calls.
+    ig_min_request_interval: float = 1.0
+    # Account currency, for display only. IG reports it per account.
+    ig_currency: str = "GBP"
+    # Spread bets are geared, so exposure legitimately exceeds equity and the
+    # equity-based MAX_POSITION_PCT cap would crush every size. This is the
+    # gearing ceiling instead: 300% = at most 3x account equity at risk of
+    # moving against you, before the stop.
+    ig_max_exposure_pct: float = Field(default=300.0, gt=0, le=2000)
+    # Rough deposit factor used to sanity-check a size against available margin
+    # before IG is asked. IG's real requirement varies by market (often 5-20%
+    # on indices and major FX, far higher on small caps), and IG itself is the
+    # authority — this only catches the obviously-unfundable case early.
+    ig_margin_pct: float = Field(default=20.0, gt=0, le=100)
+    # Smallest stake IG will accept, in currency per point. Market-dependent;
+    # 0.50 is the usual floor on its main spread betting markets.
+    ig_min_deal_size: float = Field(default=0.5, gt=0)
+    # Pin watchlist symbols to IG epics: "AAPL=UA.D.AAPL.CASH.IP,FTSE=IX.D.FTSE.DAILY.IP".
+    # Anything unmapped falls back to IG's own market search, which is a guess.
+    ig_epics: str = ""
+
     # --- News -------------------------------------------------------------
     news_api_key: str = ""
     news_cache_ttl: int = 900
@@ -166,7 +197,7 @@ class Settings(BaseSettings):
     @property
     def implied_min_stop_pct(self) -> float:
         """
-        The stop distance below which MAX_POSITION_PCT starts overriding the
+        The stop distance below which the size cap starts overriding the
         per-trade risk budget.
 
         Notional needed for a full-risk position is risk% / stop-distance%, so a
@@ -174,23 +205,40 @@ class Settings(BaseSettings):
         If the position cap is tighter than that, size gets trimmed and the
         trade quietly risks less than the configured 1%. That is safe, but it is
         worth knowing about rather than discovering in the sizing output.
+
+        On a spread betting account the governing cap is the gearing ceiling
+        rather than MAX_POSITION_PCT, so the same arithmetic uses that instead.
         """
-        return self.risk_per_trade_pct / self.max_position_pct * 100.0
+        cap = self.ig_max_exposure_pct if self.spread_betting else self.max_position_pct
+        return self.risk_per_trade_pct / cap * 100.0
+
+    def live_enabled_for(self, broker: str) -> bool:
+        """
+        Whether the config authorises REAL orders through a named broker.
+
+        Three independent switches must agree, and the third one is
+        broker-specific: Alpaca has ALPACA_PAPER, IG has IG_DEMO. Keeping them
+        separate means a leftover `ALPACA_PAPER=false` cannot quietly authorise
+        live spread bets, and vice versa.
+        """
+        if self.trading_mode != "live" or self.confirm_live != LIVE_CONFIRMATION_PHRASE:
+            return False
+        if broker == "ig":
+            return not self.ig_demo
+        return not self.alpaca_paper
 
     @property
     def live_trading_enabled(self) -> bool:
-        """Three independent switches must agree before a real order is possible."""
-        return (
-            self.trading_mode == "live"
-            and not self.alpaca_paper
-            and self.confirm_live == LIVE_CONFIRMATION_PHRASE
-        )
+        """The live gate for whichever broker is actually in use."""
+        broker = self.active_broker
+        return self.live_enabled_for("alpaca" if broker == "simulated" else broker)
 
     @property
     def broker_base_url(self) -> str:
+        """Alpaca's host. Asks Alpaca's own gate, not whichever broker is active."""
         return (
             "https://api.alpaca.markets"
-            if self.live_trading_enabled
+            if self.live_enabled_for("alpaca")
             else "https://paper-api.alpaca.markets"
         )
 
@@ -203,6 +251,57 @@ class Settings(BaseSettings):
             and not is_placeholder(self.alpaca_api_key)
             and not is_placeholder(self.alpaca_secret_key)
         )
+
+    @property
+    def has_ig_keys(self) -> bool:
+        return all(
+            bool(v) and not is_placeholder(v)
+            for v in (self.ig_api_key, self.ig_username, self.ig_password)
+        )
+
+    @property
+    def ig_base_url(self) -> str:
+        """Demo and live are different hosts. Demo is the default on purpose."""
+        return (
+            "https://demo-api.ig.com/gateway/deal"
+            if self.ig_demo
+            else "https://api.ig.com/gateway/deal"
+        )
+
+    @property
+    def active_broker(self) -> str:
+        """Which adapter build_broker should construct."""
+        if self.broker != "auto":
+            return self.broker
+        if self.has_ig_keys:
+            return "ig"
+        if self.has_broker_keys:
+            return "alpaca"
+        return "simulated"
+
+    @property
+    def ig_epic_map(self) -> dict[str, str]:
+        """Parsed IG_EPICS. Malformed entries are skipped, not fatal."""
+        mapping: dict[str, str] = {}
+        for pair in self.ig_epics.split(","):
+            symbol, sep, epic = pair.partition("=")
+            if sep and symbol.strip() and epic.strip():
+                mapping[symbol.strip().upper()] = epic.strip()
+        return mapping
+
+    @property
+    def spread_betting(self) -> bool:
+        """
+        True when sizes are a stake per point rather than a share count.
+
+        Changes what a 'size' means everywhere downstream, so it is asked once
+        here instead of being inferred from the broker name in five places.
+        """
+        return self.active_broker == "ig"
+
+    @property
+    def size_unit(self) -> str:
+        return f"{self.ig_currency}/point" if self.spread_betting else "shares"
 
     @property
     def has_llm_key(self) -> bool:
@@ -231,7 +330,10 @@ class Settings(BaseSettings):
         blockers = []
         if self.trading_mode != "live":
             blockers.append("TRADING_MODE is not 'live'")
-        if self.alpaca_paper:
+        if self.spread_betting:
+            if self.ig_demo:
+                blockers.append("IG_DEMO is true")
+        elif self.alpaca_paper:
             blockers.append("ALPACA_PAPER is true")
         if self.confirm_live != LIVE_CONFIRMATION_PHRASE:
             blockers.append(f"CONFIRM_LIVE is not '{LIVE_CONFIRMATION_PHRASE}'")

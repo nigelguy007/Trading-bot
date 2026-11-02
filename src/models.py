@@ -152,12 +152,28 @@ class Signal:
 
 @dataclass
 class PositionSizing:
+    """
+    How much to trade, and why.
+
+    `shares` is the size in whatever `unit` says. For a share account that is a
+    share count. For a spread betting account (IG) it is a stake per point, and
+    `notional` is then the geared exposure, not money spent — the field names
+    are kept so one sizing object flows through the whole pipeline, but an
+    alert that prints a bare number is misleading, hence `unit`.
+    """
+
     shares: float
     dollar_risk: float
     risk_per_share: float
     notional: float
     account_risk_pct: float
     capped_by: str = ""
+    unit: str = "shares"
+
+    @property
+    def size_label(self) -> str:
+        """e.g. '2.5 GBP/point' or '50 shares' — safe to show a human."""
+        return f"{self.shares:g} {self.unit}"
 
 
 @dataclass

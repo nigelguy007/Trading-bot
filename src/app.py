@@ -84,15 +84,46 @@ def build_app(
             note="This process can place REAL orders with REAL money.",
         )
 
-    log.info(
-        "app.risk_profile",
-        risk_per_trade_pct=settings.risk_per_trade_pct,
-        max_position_pct=settings.max_position_pct,
-        note=(
-            f"stops closer than {settings.implied_min_stop_pct:.1f}% will be "
-            "size-capped and risk less than the per-trade budget"
-        ),
-    )
+    if settings.spread_betting:
+        log.warning(
+            "app.SPREAD_BETTING",
+            broker="ig",
+            unit=settings.size_unit,
+            max_exposure_pct=settings.ig_max_exposure_pct,
+            note=(
+                "Sizes are a stake per point on LEVERAGED positions. The "
+                "per-trade risk budget still holds if stops fill at their "
+                "level; gaps through a stop cost more than on shares."
+            ),
+        )
+        if settings.crypto_symbols:
+            log.warning(
+                "app.ig_no_crypto",
+                symbols=settings.crypto_symbols,
+                note="IG offers no crypto to UK retail clients; these will be refused",
+            )
+        log.info(
+            "app.risk_profile",
+            risk_per_trade_pct=settings.risk_per_trade_pct,
+            ig_max_exposure_pct=settings.ig_max_exposure_pct,
+            ig_min_deal_size=settings.ig_min_deal_size,
+            note=(
+                "stake = risk budget / stop distance in points, then capped at "
+                f"{settings.ig_max_exposure_pct:g}% of equity in exposure — so "
+                f"stops closer than {settings.implied_min_stop_pct:.2f}% risk "
+                "less than the per-trade budget"
+            ),
+        )
+    else:
+        log.info(
+            "app.risk_profile",
+            risk_per_trade_pct=settings.risk_per_trade_pct,
+            max_position_pct=settings.max_position_pct,
+            note=(
+                f"stops closer than {settings.implied_min_stop_pct:.1f}% will be "
+                "size-capped and risk less than the per-trade budget"
+            ),
+        )
 
     journal = TradeJournal(settings.journal_db)
     broker = build_broker(settings, force_simulated=force_simulated)
@@ -100,7 +131,7 @@ def build_app(
     portfolio = PortfolioManager(broker, settings, journal)
     # `force_simulated` means "run entirely locally" — a simulated broker that
     # still fetches live prices would fail on the first missing key.
-    market_data = build_market_data(settings, force_csv=force_simulated)
+    market_data = build_market_data(settings, force_csv=force_simulated, broker=broker)
     news = NewsClient(settings)
 
     # Without a key the dashboard, journal and backtester still work; only

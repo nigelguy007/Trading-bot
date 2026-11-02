@@ -81,7 +81,30 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     else:
         bad.append("ANTHROPIC_API_KEY is empty — the analysis brain cannot run")
 
-    if is_placeholder(settings.alpaca_api_key) or is_placeholder(settings.alpaca_secret_key):
+    if settings.active_broker == "ig":
+        ok.append(
+            f"broker: IG ({'DEMO' if settings.ig_demo else 'LIVE'}) — "
+            f"sizes in {settings.size_unit}"
+        )
+        warn.append(
+            "IG positions are LEVERAGED spread bets, not shares. Exposure is "
+            f"capped at {settings.ig_max_exposure_pct:g}% of equity. "
+            "Read docs/ig-spread-betting.md before going live."
+        )
+        if not settings.ig_epic_map:
+            warn.append(
+                "no IG_EPICS mapping — every symbol will be resolved by IG's own "
+                "market search, which can pick the wrong market. Pin them, e.g. "
+                "IG_EPICS=AAPL=UA.D.AAPL.CASH.IP"
+            )
+        else:
+            ok.append(f"{len(settings.ig_epic_map)} IG epic(s) pinned")
+        if settings.crypto_symbols:
+            warn.append(
+                "CRYPTO_WATCHLIST is set but IG offers no crypto to UK retail "
+                "clients — those signals will be refused"
+            )
+    elif is_placeholder(settings.alpaca_api_key) or is_placeholder(settings.alpaca_secret_key):
         warn.append(
             "ALPACA keys are still template placeholders — treated as absent, so the "
             "bot uses the local simulator and CSV prices. Paste real PAPER keys to "
@@ -90,7 +113,7 @@ def cmd_doctor(args: argparse.Namespace) -> int:
     elif settings.has_broker_keys:
         ok.append("Alpaca keys present")
     else:
-        warn.append("no Alpaca keys — the bot will use the local simulator and CSV data")
+        warn.append("no broker keys — the bot will use the local simulator and CSV data")
 
     if settings.news_api_key:
         ok.append("NewsAPI key present")
@@ -137,7 +160,33 @@ def _check_apis(settings: Settings, ok: list, warn: list, bad: list) -> None:
     except Exception as exc:
         bad.append(f"Claude call failed: {exc}")
 
-    if settings.has_broker_keys:
+    if settings.active_broker == "ig":
+        try:
+            from src.broker.ig import IGBroker
+
+            ig = IGBroker(settings)
+            account = ig.get_account()
+            ok.append(
+                f"IG reachable — equity {account.equity:,.2f} {settings.ig_currency} "
+                f"({'demo' if ig.is_paper else 'LIVE'}), "
+                f"{account.buying_power:,.2f} available"
+            )
+            for symbol in settings.symbols[:3]:
+                try:
+                    epic = ig.resolve_epic(symbol)
+                    rules = ig.dealing_rules(epic)
+                    ok.append(
+                        f"{symbol} -> {epic} (min stake {rules['min_deal_size']:g}, "
+                        f"min stop {rules['min_stop_distance']:g}"
+                        f"{' ' + rules['min_stop_unit'] if rules['min_stop_unit'] else ''}, "
+                        f"{rules['market_status'] or 'status unknown'})"
+                    )
+                except Exception as exc:
+                    warn.append(f"{symbol}: {exc}")
+            ig.close()
+        except Exception as exc:
+            bad.append(f"IG call failed: {exc}")
+    elif settings.has_broker_keys:
         try:
             from src.broker.alpaca import AlpacaBroker
 

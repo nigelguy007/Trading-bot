@@ -63,8 +63,10 @@ class AlertRouter:
     def halt(self, decision: RiskDecision, state: PortfolioState) -> None:
         self.broadcast(formatter.halt_text(decision, state))
 
-    def fill(self, signal: Signal, qty: float, order_id: str, paper: bool) -> None:
-        self.broadcast(formatter.fill_text(signal, qty, order_id, paper))
+    def fill(
+        self, signal: Signal, qty: float, order_id: str, paper: bool, unit: str = "shares"
+    ) -> None:
+        self.broadcast(formatter.fill_text(signal, qty, order_id, paper, unit))
 
     def broadcast(self, text: str) -> None:
         self.discord.send(text)

@@ -43,7 +43,9 @@ class AlpacaBroker(Broker):
 
     @property
     def is_paper(self) -> bool:
-        return not self.settings.live_trading_enabled
+        # Alpaca's own gate, not whichever broker happens to be active: an IG
+        # setup must not be able to flip this adapter live.
+        return not self.settings.live_enabled_for("alpaca")
 
     def close(self) -> None:
         self._client.close()

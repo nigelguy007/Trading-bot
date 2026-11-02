@@ -24,18 +24,30 @@ def signal_text(
     venue = "PAPER" if paper else "*** LIVE ***"
     header = f"{ARROW.get(signal.direction, signal.direction.upper())} {signal.symbol} [{venue}]"
 
+    # A spread bet's size is a stake per point and its "notional" is geared
+    # exposure, not money spent. Printing those two numbers with share-dealing
+    # labels is how someone misreads a 3x position as a small one.
+    geared = sizing.unit != "shares"
+    per = "point" if geared else "share"
+    exposure_label = "Exposure" if geared else "Notional"
+    # The stake's unit already names the currency ("GBP/point"); a hardcoded $
+    # in front of a sterling figure would be worse than no symbol at all.
+    cur = "" if geared else "$"
+
     lines = [
         header,
         "",
         f"Entry   {signal.entry:,.2f}",
-        f"Stop    {signal.stop:,.2f}   (-{signal.risk_per_share:,.2f}/share)",
-        f"Target  {signal.target:,.2f}   (+{signal.reward_per_share:,.2f}/share)",
+        f"Stop    {signal.stop:,.2f}   (-{signal.risk_per_share:,.2f}/{per})",
+        f"Target  {signal.target:,.2f}   (+{signal.reward_per_share:,.2f}/{per})",
         f"R:R     {signal.risk_reward:.2f}",
         "",
-        f"Size    {sizing.shares:g} @ risk ${sizing.dollar_risk:,.2f} "
+        f"Size    {sizing.size_label} @ risk {cur}{sizing.dollar_risk:,.2f} "
         f"({sizing.account_risk_pct:.2f}% of account)",
-        f"Notional ${sizing.notional:,.2f}",
+        f"{exposure_label} {cur}{sizing.notional:,.2f}",
     ]
+    if geared:
+        lines.append("LEVERAGED: exposure above is geared, not cash committed.")
     if sizing.capped_by:
         lines.append(f"Size limited by: {sizing.capped_by}")
 
@@ -95,12 +107,14 @@ def halt_text(decision: RiskDecision, state: PortfolioState) -> str:
     )
 
 
-def fill_text(signal: Signal, qty: float, order_id: str, paper: bool) -> str:
+def fill_text(
+    signal: Signal, qty: float, order_id: str, paper: bool, unit: str = "shares"
+) -> str:
     venue = "PAPER" if paper else "*** LIVE ***"
     return "\n".join(
         [
             f"ORDER SUBMITTED [{venue}]",
-            f"{signal.symbol} {signal.direction} {qty:g} @ ~{signal.entry:,.2f}",
+            f"{signal.symbol} {signal.direction} {qty:g} {unit} @ ~{signal.entry:,.2f}",
             f"Stop {signal.stop:,.2f} | Target {signal.target:,.2f}",
             f"Broker order: {order_id or 'n/a'}",
         ]
@@ -118,10 +132,11 @@ def discord_embed(signal: Signal, sizing: PositionSizing, decision: RiskDecision
             {"name": "Stop", "value": f"{signal.stop:,.2f}", "inline": True},
             {"name": "Target", "value": f"{signal.target:,.2f}", "inline": True},
             {"name": "R:R", "value": f"{signal.risk_reward:.2f}", "inline": True},
-            {"name": "Size", "value": f"{sizing.shares:g}", "inline": True},
+            {"name": "Size", "value": sizing.size_label, "inline": True},
             {
                 "name": "Risk",
-                "value": f"${sizing.dollar_risk:,.2f} ({sizing.account_risk_pct:.2f}%)",
+                "value": f"{'' if sizing.unit != 'shares' else '$'}"
+                         f"{sizing.dollar_risk:,.2f} ({sizing.account_risk_pct:.2f}%)",
                 "inline": True,
             },
             {"name": "Reasoning", "value": (signal.reasoning or "-")[:1024]},

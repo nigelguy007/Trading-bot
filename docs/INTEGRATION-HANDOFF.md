@@ -46,8 +46,9 @@ This is the table to plan your integration from.
 | `src/backtest.py` | 279 | `MarketDataProvider`, strategies | Portable |
 | `strategies/` | 170 | `TechnicalSnapshot` | **Drop-in** |
 | `src/broker/base.py` | 40 | — (ABC) | Implement against your broker |
-| `src/broker/alpaca.py` | 187 | Alpaca REST | Reference impl — likely discard |
-| `src/data/market_data.py` | 190 | Alpaca REST | Reference impl — likely discard |
+| `src/broker/alpaca.py` | 190 | Alpaca REST | Reference impl — likely discard |
+| `src/broker/ig.py` | 600 | IG REST | Reference impl for a **geared** broker — read it if your platform trades derivatives |
+| `src/data/market_data.py` | 330 | Alpaca / IG REST | Reference impl — likely discard |
 | `src/execution.py` | 161 | `Broker`, journal, approvals, alerts | Rewire to your order path |
 | `src/pipeline.py` | 228 | everything | Read as a spec, not as code to port |
 | `src/alerts/` | 335 | Discord/Telegram HTTP | Swap for your notifier |
@@ -197,7 +198,12 @@ bot next wakes up. If your platform cannot submit brackets atomically, that is a
 behaviour change you must consciously accept and compensate for — see the crypto gap
 in §8.
 
-Two reference implementations: `alpaca.py` (real REST, bracket orders, mapped error
+`PositionSizing.unit` says what `shares` means: `"shares"` for a share account,
+`"GBP/point"` for a spread bet. If your platform trades anything geared, carry that
+field through to every display — a stake per point rendered as a share count reads as
+a position several times smaller than it is.
+
+Three reference implementations: `alpaca.py` (real REST, bracket orders, mapped error
 messages) and `paper.py` (local simulator, JSON state, used by the test suite).
 
 ### Market data (`src/data/market_data.py`)
@@ -293,37 +299,45 @@ Ordered by how likely each is to bite you.
    synthetic CSVs from `scripts/make_sample_data.py`, which is *random data* — any P&L
    it produces is meaningless and the script says so in its own output.
 
-3. **Crypto has no bracket orders.** Alpaca does not support them for crypto, so the
+3. **The IG adapter has never run against a real IG account.** It is written to
+   IG's published REST API and tested against a mocked IG (81 tests covering the wire
+   format, the asynchronous deal/confirm sequence, closing via `_method: DELETE`, and
+   epic resolution), but no real credentials have ever been typed into it. Expect
+   wire-level surprises on first contact and find them on a demo account. It also does
+   not handle IG's `scalingFactor` (some FX markets quote x100) or guaranteed stops.
+   See [ig-spread-betting.md](ig-spread-betting.md).
+
+4. **Crypto has no bracket orders.** Alpaca does not support them for crypto, so the
    stop is tracked bot-side only. A process death between fill and stop placement
    leaves an unprotected position. `alpaca.py` logs
    `broker.crypto_no_bracket` when this applies. If your platform supports crypto
    brackets, this gap closes; if not, treat crypto as needing an external stop watcher.
 
-4. **`SimulatedBroker` is not a market simulator.** Fills at the signal price. No
+5. **`SimulatedBroker` is not a market simulator.** Fills at the signal price. No
    slippage, no partial fills, no queue position, no spread. Fine for wiring
    verification, useless for estimating returns.
 
-5. **The backtester tests mechanical rules only, not the AI.** You cannot reproduce
+6. **The backtester tests mechanical rules only, not the AI.** You cannot reproduce
    what a model said six months ago. It does guard lookahead (decisions use bars
    `0..i`, fills at `i+1` open) and assumes stop-before-target when a bar contains
    both — the pessimistic reading. Treat its output as an upper bound.
 
-6. **Journal reconciliation is one-directional.** The bot records what it submitted; it
+7. **Journal reconciliation is one-directional.** The bot records what it submitted; it
    does not poll the broker to confirm what actually filled, or detect a stop that
    triggered while it was asleep. Open positions are read live from the broker, but
    `trades` rows close only when the bot closes them. **If you integrate with a real
    platform, wire fill/stop webhooks into `TradeJournal.close_trade()`** or the metrics
    will drift from reality. This is the largest missing piece for production use.
 
-7. **Approval expiry is wall-clock, not price-based.** A 45-minute-old approval is
+8. **Approval expiry is wall-clock, not price-based.** A 45-minute-old approval is
    refused, but a 5-minute-old approval on a symbol that just gapped is accepted. A
    price-drift check before submission would be a sensible addition.
 
-8. **Single-process, single-user.** The approval store is a JSON file and the journal is
+9. **Single-process, single-user.** The approval store is a JSON file and the journal is
    SQLite with `check_same_thread=False`. Two concurrent writers will race. Move both
    to your platform's database before running more than one instance.
 
-9. **`.gitignore` lesson, since it cost us a package.** A bare `data/` rule also matches
+10. **`.gitignore` lesson, since it cost us a package.** A bare `data/` rule also matches
    `src/data/` and silently excluded that entire package from the first commit — tests
    passed locally against files git was ignoring, and the next clean checkout could not
    import. Fixed in `e5822e9` by anchoring every rule that names a real source

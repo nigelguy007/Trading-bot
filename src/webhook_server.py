@@ -24,6 +24,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.app import AppContext, build_app
+from src.broker.base import BrokerError
 from src.logging_setup import get_logger
 from src.metrics import compute_metrics
 
@@ -152,14 +153,44 @@ async def health() -> dict:
         "model": ctx.llm.model,
         "llm_ready": getattr(ctx.llm, "enabled", True),
         "broker": ctx.broker.name,
+        # The broker learns the real account currency at login; fall back to
+        # the configured one until then.
+        "currency_symbol": _symbol_for(
+            getattr(ctx.broker, "_currency", "") or ctx.settings.ig_currency
+        )
+        if ctx.settings.spread_betting
+        else "$",
+        "size_unit": ctx.settings.size_unit,
         "symbols": ctx.settings.all_symbols,
     }
+
+
+CURRENCY_SYMBOLS = {"GBP": "£", "USD": "$", "EUR": "€", "AUD": "A$", "CHF": "CHF "}
+
+
+def _symbol_for(currency: str) -> str:
+    code = (currency or "").upper()
+    return CURRENCY_SYMBOLS.get(code, f"{code} " if code else "$")
+
+EMPTY_PORTFOLIO = {
+    "equity": 0.0, "cash": 0.0, "buying_power": 0.0, "day_pnl": 0.0,
+    "day_pnl_pct": 0.0, "drawdown_pct": 0.0, "peak_equity": 0.0,
+    "exposure": 0.0, "exposure_pct": 0.0, "open_risk": 0.0,
+    "open_risk_pct": 0.0, "positions": [],
+}
 
 
 @app.get("/api/portfolio")
 async def portfolio() -> dict:
     ctx = get_context()
-    state = ctx.portfolio.snapshot()
+    try:
+        state = ctx.portfolio.snapshot()
+    except BrokerError as exc:
+        # A wrong key or a broker outage must not blank the whole dashboard.
+        # The page fetches five endpoints together, so a 500 here used to leave
+        # the user staring at "loading…" with the real reason only in the log.
+        log.error("dashboard.broker_unreachable", error=str(exc))
+        return {**EMPTY_PORTFOLIO, "error": str(exc)}
     return {
         "equity": state.account.equity,
         "cash": state.account.cash,
@@ -308,7 +339,10 @@ DASHBOARD_HTML = """<!doctype html>
 <div class="cards" id="metrics"></div>
 
 <script>
-const money = n => (n<0?"-":"") + "$" + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+// Set from /api/health on the first refresh. A GBP spread betting account
+// rendered with a $ in front of every figure is just wrong.
+let CUR = "$";
+const money = n => (n<0?"-":"") + CUR + Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
 const cls = n => n > 0 ? "pos" : n < 0 ? "neg" : "";
 const esc = s => String(s ?? "").replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
@@ -332,6 +366,8 @@ async function refresh() {
         .map(u => fetch(u).then(r => r.json()))
     );
 
+    CUR = health.currency_symbol || "$";
+
     const badge = health.mode === "live"
       ? '<span class="badge live">LIVE MONEY</span>'
       : '<span class="badge paper">PAPER</span>';
@@ -339,11 +375,22 @@ async function refresh() {
       `${badge} &nbsp; ${esc(health.execution_mode)} mode &nbsp;·&nbsp; ${esc(health.model)}
        &nbsp;·&nbsp; ${esc(health.broker)} &nbsp;·&nbsp; ${health.symbols.length} symbols`;
 
-    document.getElementById("banner").innerHTML = health.llm_ready ? "" :
+    let banners = "";
+    if (!health.llm_ready) {
+      banners +=
       `<div class="banner"><b>Viewing mode — no Claude API key.</b><br>
        Everything below is real and the page works, but the bot cannot analyse
        markets or produce new signals yet. Add a key with
        <code>./start.sh setkey</code> and restart. Backtesting works without one.</div>`;
+    }
+    if (pf.error) {
+      banners +=
+      `<div class="banner"><b>Cannot reach the broker (${esc(health.broker)}).</b><br>
+       ${esc(pf.error)}<br>
+       The figures below are zeros, not your account. Run
+       <code>./start.sh doctor --check-apis</code>.</div>`;
+    }
+    document.getElementById("banner").innerHTML = banners;
 
     document.getElementById("cards").innerHTML =
       card("Equity", money(pf.equity)) +
@@ -366,7 +413,7 @@ async function refresh() {
           <td>${s.entry.toFixed(2)}</td><td>${s.stop.toFixed(2)}</td>
           <td class="hide-sm">${s.target.toFixed(2)}</td>
           <td class="hide-sm">${(s.risk_reward ?? 0).toFixed(2)}</td>
-          <td class="hide-sm">${p.sizing.shares}</td>
+          <td class="hide-sm">${p.sizing.shares} ${esc(p.sizing.unit || "shares")}</td>
           <td>${money(p.sizing.dollar_risk)} (${p.sizing.account_risk_pct.toFixed(2)}%)</td>
           <td><button class="ok" onclick="act('${esc(s.id)}','approve')">Approve</button>
               <button class="no" onclick="act('${esc(s.id)}','deny')">Deny</button></td>
