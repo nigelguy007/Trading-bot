@@ -302,3 +302,21 @@ def test_serve_is_still_available_for_the_foreground(script):
     """Containers and process managers want PID 1 to be the server."""
     assert 'if [ "$COMMAND" = "serve" ]; then' in script
     assert re.search(r'exec\s+"\$VPY"\s+-m\s+src\.cli\s+"\$@"', script)
+
+
+def test_a_stale_server_is_restarted_rather_than_reported(script):
+    """
+    Telling the user to restart after a pull did not work — three rounds
+    of "I pulled and nothing changed". Compare the running build to the
+    checkout and just do it.
+    """
+    assert "running_build" in script
+    assert "checkout_build" in script
+    assert '"$RUNNING_BUILD" != "$HERE_BUILD"' in script
+    assert "Restarting it so you get the current code" in script
+
+
+def test_stop_is_shared_between_the_stop_command_and_the_restart(script):
+    """Two copies of the kill logic would drift apart."""
+    assert "stop_bot()" in script
+    assert script.count("pkill -f 'src\\.cli serve'") == 1

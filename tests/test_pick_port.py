@@ -168,3 +168,50 @@ def test_a_full_range_is_reported_rather_than_guessed(monkeypatch):
     assert state == "none-free"
     assert existing is None
     assert chosen == 9000
+
+
+# ---------------------------------------------------------------------- #
+# TIME_WAIT
+# ---------------------------------------------------------------------- #
+def test_a_just_released_port_is_offered_again():
+    """
+    The restart bug: the launcher stops the server and starts it again, but
+    the port it just let go sits in TIME_WAIT. uvicorn can rebind it because
+    asyncio sets SO_REUSEADDR; a probe without that flag cannot, so the
+    launcher stepped to the next port and the dashboard URL moved on every
+    single restart — 8001, 8002, 8003 — breaking any open tab.
+
+    Drive a real connection through the socket so the listening side
+    actually enters TIME_WAIT, then insist the port reads as free.
+    """
+    port = free_port()
+    server = socket.socket()
+    server.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+    server.bind(("127.0.0.1", port))
+    server.listen(1)
+
+    client = socket.socket()
+    client.connect(("127.0.0.1", port))
+    accepted, _ = server.accept()
+    for s in (client, accepted, server):
+        s.close()
+
+    assert not taken(port, "127.0.0.1"), (
+        "a port in TIME_WAIT must be offered again — uvicorn can bind it"
+    )
+
+
+def test_the_probe_sets_the_same_socket_option_uvicorn_does():
+    """If these drift apart the probe stops predicting the real bind."""
+    import inspect
+
+    import scripts.pick_port as pp
+
+    assert "SO_REUSEADDR" in inspect.getsource(pp.taken)
+
+
+def test_a_live_listener_is_still_taken(held):
+    """SO_REUSEADDR must not make an occupied port look free."""
+    port = free_port()
+    held(port)
+    assert taken(port, "0.0.0.0")

@@ -32,13 +32,22 @@ def taken(port: int, host: str) -> bool:
     """
     Whether binding `port` would fail for the server.
 
-    Binds exactly as uvicorn will: the same host, and WITHOUT SO_REUSEADDR.
-    An earlier version bound 127.0.0.1 with SO_REUSEADDR while uvicorn binds
-    0.0.0.0 without it. That is strictly more permissive, so it reported a
-    busy port free and the server then died on it with "address already in
-    use".
+    Binds exactly as uvicorn will: the same host, and WITH SO_REUSEADDR.
+
+    Both halves of that matter, and each was got wrong once. Binding
+    127.0.0.1 while uvicorn binds 0.0.0.0 reported a busy port free, and
+    the server then died with "address already in use" — fixed by passing
+    the real host through.
+
+    Omitting SO_REUSEADDR was the overcorrection. asyncio sets it on POSIX,
+    so uvicorn can bind a port sitting in TIME_WAIT while a probe without
+    it cannot. Straight after a restart the just-released port therefore
+    read as taken, the launcher stepped to the next one, and the dashboard
+    URL moved on every restart — 8001, then 8002, then 8003 — breaking
+    whatever tab or bookmark the user had open.
     """
     with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
         try:
             s.bind((host, port))
         except OSError:

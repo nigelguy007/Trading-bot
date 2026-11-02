@@ -429,3 +429,16 @@ def test_the_desk_can_get_back_to_the_opening_page(client):
     """A one-way door would strand you on the dashboard."""
     html = client.get("/desk").text
     assert 'href="/" class="mark"' in html
+
+
+def test_the_pages_are_never_cached(client):
+    """
+    `/` served the dashboard until the opening page took that URL. A
+    browser holding the cached copy shows the OLD page after an upgrade
+    and there is no way for the user to tell — which is exactly what
+    happened, repeatedly. Both pages are tiny and generated per request,
+    so there is nothing to gain by caching them.
+    """
+    for path in ("/", "/desk"):
+        headers = client.get(path).headers
+        assert "no-store" in headers.get("cache-control", ""), path

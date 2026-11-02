@@ -226,6 +226,47 @@ health_ok() {
     curl -fs -m 2 "http://127.0.0.1:$1/api/health" >/dev/null 2>&1
 }
 
+# The commit the RUNNING server was started from, which is not necessarily
+# the commit sitting in this directory.
+running_build() {
+    curl -fs -m 2 "http://127.0.0.1:$1/api/health" 2>/dev/null \
+        | sed -n 's/.*"build":"\([^"]*\)".*/\1/p'
+}
+
+checkout_build() {
+    git rev-parse --short HEAD 2>/dev/null || printf 'unknown'
+}
+
+# After a stop the old socket can linger for a moment. Without waiting for
+# it, the restart picks the NEXT free port and the URL moves every single
+# time — 8001, then 8002, then 8003 — so any bookmark or open tab breaks on
+# each upgrade. Wait for the original port to come back.
+wait_for_port() {
+    for _ in 1 2 3 4 5 6 7 8 9 10 11 12 13 14 15; do
+        FREEP="$("$VPY" scripts/pick_port.py "$1" "$2" 2>/dev/null | awk '{print $1}')"
+        [ "$FREEP" = "$1" ] && return 0
+        sleep 1
+    done
+    return 1
+}
+
+stop_bot() {
+    STOPPED=""
+    if bot_pid >/dev/null; then
+        kill "$BOTPID" 2>/dev/null || true
+        for _ in 1 2 3 4 5 6 7 8 9 10; do
+            kill -0 "$BOTPID" 2>/dev/null || break
+            sleep 1
+        done
+        kill -9 "$BOTPID" 2>/dev/null || true
+        STOPPED="yes"
+    fi
+    # Also catch a copy started before pidfiles existed, or by hand.
+    pkill -f 'src\.cli serve' 2>/dev/null && STOPPED="yes"
+    rm -f "$PIDFILE" "$PORTFILE"
+    sleep 1
+}
+
 choose_port() {
     WANTED="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
     WANTED="${WANTED:-8001}"
@@ -264,19 +305,7 @@ report_running() {
 
 case "$COMMAND" in
     stop)
-        STOPPED=""
-        if bot_pid >/dev/null; then
-            kill "$BOTPID" 2>/dev/null || true
-            for _ in 1 2 3 4 5 6 7 8 9 10; do
-                kill -0 "$BOTPID" 2>/dev/null || break
-                sleep 1
-            done
-            kill -9 "$BOTPID" 2>/dev/null || true
-            STOPPED="yes"
-        fi
-        # Also catch a copy started before pidfiles existed, or by hand.
-        pkill -f 'src\.cli serve' 2>/dev/null && STOPPED="yes"
-        rm -f "$PIDFILE" "$PORTFILE"
+        stop_bot
         if [ -n "$STOPPED" ]; then ok "Stopped."; else say "Nothing was running."; fi
         exit 0
         ;;
@@ -302,13 +331,29 @@ case "$COMMAND" in
     start)
         choose_port
         if [ "$STATE" = "already-ours" ] && [ -z "${ALLOW_SECOND_INSTANCE:-}" ]; then
-            warn "Already running on port ${RUNNING_ON}."
-            say  "  Open it:    ${GREEN}http://localhost:${RUNNING_ON}${OFF}"
-            say  "  Restart it: ${DIM}bash start.sh stop && bash start.sh${OFF}"
-            say  ""
-            warn "Just pulled? Restart so the new code is served."
-            say  ""
-            exit 0
+            RUNNING_BUILD="$(running_build "$RUNNING_ON")"
+            HERE_BUILD="$(checkout_build)"
+            # The stale-process trap: `git pull` succeeds, the old server
+            # keeps serving the old page, and the upgrade looks like it did
+            # nothing. Telling the user to restart did not work — so just
+            # restart it. Doing it for them is the fix; a notice was not.
+            if [ -n "$RUNNING_BUILD" ] && [ "$HERE_BUILD" != "unknown" ] \
+               && [ "$RUNNING_BUILD" != "$HERE_BUILD" ]; then
+                warn "The running server is build ${RUNNING_BUILD}; this checkout is ${HERE_BUILD}."
+                say  "  Restarting it so you get the current code..."
+                OLD_PORT="$RUNNING_ON"
+                stop_bot
+                # Keep the URL stable across the restart.
+                wait_for_port "$OLD_PORT" "$HOST" || true
+                choose_port
+            else
+                ok "Already running on port ${RUNNING_ON} (build ${RUNNING_BUILD:-unknown})."
+                say "  Open this:  ${GREEN}http://localhost:${RUNNING_ON}${OFF}"
+                say ""
+                say "  ${DIM}Stop it:  bash start.sh stop${OFF}"
+                say ""
+                exit 0
+            fi
         fi
         if [ "$STATE" = "none-free" ]; then
             die "Ports ${WANTED}-$((WANTED + 39)) are all in use. Free one, or set

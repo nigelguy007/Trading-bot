@@ -336,8 +336,21 @@ async def scan(background: BackgroundTasks) -> dict:
 # ====================================================================== #
 #  Dashboard
 # ====================================================================== #
+# Both pages are generated fresh on every request and are tiny, so there is
+# nothing to gain by caching them and a great deal to lose: `/` served the
+# dashboard until recently, and a browser holding that cached copy shows the
+# OLD page after an upgrade with no way for the user to tell. That cost
+# several rounds of debugging. no-store ends it — a plain reload is always
+# enough, and Cmd-Shift-R is never needed.
+_NO_STORE = {
+    "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+    "Pragma": "no-cache",
+    "Expires": "0",
+}
+
+
 @app.get("/", response_class=HTMLResponse)
-async def landing() -> str:
+async def landing() -> HTMLResponse:
     """
     The opening page: one full-screen frame, then a click through to the desk.
 
@@ -345,12 +358,12 @@ async def landing() -> str:
     A hero that shares a scroll with a risk table is not an opening — it is
     a header, and it read as one.
     """
-    return LANDING_HTML
+    return HTMLResponse(LANDING_HTML, headers=_NO_STORE)
 
 
 @app.get("/desk", response_class=HTMLResponse)
-async def dashboard() -> str:
-    return DASHBOARD_HTML
+async def dashboard() -> HTMLResponse:
+    return HTMLResponse(DASHBOARD_HTML, headers=_NO_STORE)
 
 
 LANDING_HTML = """<!doctype html>
