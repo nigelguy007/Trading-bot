@@ -46,13 +46,26 @@ fi
 # installing them can't break anything else on your machine.
 if [ ! -d "$VENV" ]; then
     say "${DIM}First run: creating a virtual environment (one time, ~10s)...${OFF}"
-    "$PY" -m venv "$VENV" || die "Could not create the virtual environment.
-    On Debian/Ubuntu you may need:  sudo apt install python3-venv"
+    if ! "$PY" -m venv "$VENV" >/dev/null 2>&1; then
+        # The default venv layout uses symlinks, which exFAT and FAT32 don't
+        # support — the usual format on external drives shared with Windows.
+        # --copies writes real files instead.
+        rm -rf "$VENV"
+        say "${DIM}Retrying without symlinks (normal on an external drive)...${OFF}"
+        "$PY" -m venv --copies "$VENV" || die "Could not create the virtual environment.
+    On Debian/Ubuntu you may need:  sudo apt install python3-venv
+    On an external drive, check it is not mounted read-only."
+    fi
     ok "virtual environment created"
 fi
 
 VPY="$VENV/bin/python"
-[ -x "$VPY" ] || die "The venv looks broken. Delete it and re-run:  rm -rf $VENV && ./start.sh"
+if [ ! -x "$VPY" ]; then
+    # On a FAT-formatted drive the execute bit may not stick. Calling the
+    # interpreter through the shell still works, so only fail if it is absent.
+    [ -f "$VPY" ] || die "The venv looks broken. Delete it and re-run:
+    rm -rf $VENV && bash start.sh"
+fi
 
 # --- 3. Install dependencies when they're missing or out of date -----------
 if [ ! -f "$STAMP" ] || [ requirements-trader.txt -nt "$STAMP" ]; then

@@ -87,6 +87,13 @@ cd Trading-bot
 > Run these one per line. Don't paste a `#` comment onto the end of a command —
 > macOS's zsh treats it as arguments, not a comment.
 
+**Running from an external drive?** Use the full path under `/Volumes`, for
+example `cd "/Volumes/My Drive/Trading-bot"`. Quote it if the drive name has a
+space. If the drive is exFAT or FAT32 (the usual format for drives shared with
+Windows) the launcher detects it and builds the virtual environment without
+symlinks, which those filesystems can't store. If `./start.sh` is refused as
+not executable, run `bash start.sh` instead.
+
 > **`ModuleNotFoundError: No module named 'src'`** means you ran
 > `python -m src.cli` from somewhere other than the project folder. Use
 > `./start.sh`, which handles that for you, or `cd` into the repo first.
