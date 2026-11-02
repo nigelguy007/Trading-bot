@@ -420,6 +420,9 @@ break.
 | Two brokers, limits feel wrong | Check `doctor` says "treated as ONE portfolio". Two separate bot instances do NOT share limits. |
 | Strategy bug | Everything is logged to `logs/bot.jsonl`; test one piece at a time. |
 | Fable 5 returns 400 | It requires 30-day data retention on your org. Set `CLAUDE_MODEL=claude-opus-5`. |
+| `address already in use` after it picked a port | Fixed: the probe now binds exactly as the server does. Pull the latest. |
+| `This bot is ALREADY RUNNING on port N` | A copy is live in another Terminal tab. Open that port, or stop it with `pkill -f 'src.cli serve'`. |
+| Terminal stuck at `quote>` | An apostrophe in a pasted command opened a quote. Press Ctrl-C. |
 | Going live too fast | Back to paper. |
 
 When something breaks, paste the exact error into Claude along with the
@@ -434,7 +437,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-358 tests, no network calls. They cover the parts where being wrong costs
+380 tests, no network calls. They cover the parts where being wrong costs
 money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
 approval gate (including that alert mode really does order nothing and that a
 double-tap can't double-order), journal R-multiples, backtest lookahead guards,
