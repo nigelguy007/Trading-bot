@@ -160,7 +160,7 @@ case "$COMMAND" in
         prompt_for_api_key || exit 1
         exec "$VPY" -m src.cli doctor
         ;;
-    serve|scan|run|analyze|report|review|optimize|portfolio-review)
+    scan|run|analyze|report|review|optimize|portfolio-review)
         if ! needs_key; then
             prompt_for_api_key || exit 1
         fi

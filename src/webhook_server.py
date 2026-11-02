@@ -41,7 +41,9 @@ def get_context() -> AppContext:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     global _ctx
-    _ctx = build_app()
+    # The dashboard is useful without a key — it shows the portfolio, the
+    # journal and past signals. Only live analysis needs Claude.
+    _ctx = build_app(require_llm=False)
     log.info("server.started", symbols=len(_ctx.settings.all_symbols))
     try:
         yield
@@ -148,6 +150,7 @@ async def health() -> dict:
         "mode": "live" if ctx.settings.live_trading_enabled else "paper",
         "execution_mode": ctx.settings.execution_mode,
         "model": ctx.llm.model,
+        "llm_ready": getattr(ctx.llm, "enabled", True),
         "broker": ctx.broker.name,
         "symbols": ctx.settings.all_symbols,
     }
@@ -245,6 +248,9 @@ DASHBOARD_HTML = """<!doctype html>
   h2 { font-size:13px; text-transform:uppercase; letter-spacing:.08em;
        color:#8b949e; margin:28px 0 10px; }
   .sub { color:#8b949e; font-size:12px; margin-bottom:24px; }
+  .banner { background:#bb800933; border:1px solid #bb8009; color:#e3b341;
+            border-radius:8px; padding:12px 14px; margin-bottom:20px; font-size:13px; }
+  .banner code { background:#00000055; padding:1px 5px; border-radius:4px; }
   .badge { display:inline-block; padding:2px 8px; border-radius:10px; font-size:11px; }
   .paper { background:#1f6feb33; color:#79c0ff; }
   .live  { background:#da363333; color:#ff7b72; }
@@ -285,6 +291,7 @@ DASHBOARD_HTML = """<!doctype html>
 <body>
 <h1>AI Trading Bot</h1>
 <div class="sub" id="status">loading…</div>
+<div id="banner"></div>
 
 <div class="cards" id="cards"></div>
 
@@ -331,6 +338,12 @@ async function refresh() {
     document.getElementById("status").innerHTML =
       `${badge} &nbsp; ${esc(health.execution_mode)} mode &nbsp;·&nbsp; ${esc(health.model)}
        &nbsp;·&nbsp; ${esc(health.broker)} &nbsp;·&nbsp; ${health.symbols.length} symbols`;
+
+    document.getElementById("banner").innerHTML = health.llm_ready ? "" :
+      `<div class="banner"><b>Viewing mode — no Claude API key.</b><br>
+       Everything below is real and the page works, but the bot cannot analyse
+       markets or produce new signals yet. Add a key with
+       <code>./start.sh setkey</code> and restart. Backtesting works without one.</div>`;
 
     document.getElementById("cards").innerHTML =
       card("Equity", money(pf.equity)) +

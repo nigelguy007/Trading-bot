@@ -48,8 +48,38 @@ class LLMResponse:
         return not self.refused and bool(self.text or self.parsed)
 
 
+class DisabledLLM:
+    """
+    Stand-in used when no API key is configured.
+
+    Lets the dashboard, journal and backtester run so someone can look at the
+    system before signing up for API billing. Any attempt to actually analyse
+    raises the same LLMError a real failure would, which the pipeline already
+    catches per symbol — so a scan reports "no key" per symbol instead of
+    crashing at startup.
+    """
+
+    model = "(no API key — analysis disabled)"
+    provider = "none"
+    enabled = False
+
+    def __init__(self, settings: Settings) -> None:
+        self.settings = settings
+
+    def complete(self, *args, **kwargs) -> LLMResponse:
+        raise LLMError(
+            "No Claude API key configured, so analysis is disabled. "
+            "Run `./start.sh setkey` to add one."
+        )
+
+    def close(self) -> None:
+        return None
+
+
 class LLMClient:
     """One `complete()` call, whichever provider is configured."""
+
+    enabled = True
 
     def __init__(self, settings: Settings) -> None:
         self.settings = settings

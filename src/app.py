@@ -9,7 +9,7 @@ from __future__ import annotations
 from dataclasses import dataclass
 
 from src.ai.analyst import Analyst
-from src.ai.client import LLMClient
+from src.ai.client import DisabledLLM, LLMClient, LLMError
 from src.ai.journal_review import JournalReviewer
 from src.alerts.router import AlertRouter
 from src.approvals import ApprovalStore
@@ -73,6 +73,7 @@ def build_app(
     use_debate: bool = False,
     always_analyse: bool = False,
     force_simulated: bool = False,
+    require_llm: bool = True,
 ) -> AppContext:
     settings = settings or get_settings()
     configure_logging(settings.log_level, settings.log_path)
@@ -101,7 +102,23 @@ def build_app(
     # still fetches live prices would fail on the first missing key.
     market_data = build_market_data(settings, force_csv=force_simulated)
     news = NewsClient(settings)
-    llm = LLMClient(settings)
+
+    # Without a key the dashboard, journal and backtester still work; only
+    # analysis is unavailable. Failing the whole process here would mean you
+    # had to set up API billing before you could even look at the thing.
+    if settings.has_llm_key:
+        llm = LLMClient(settings)
+    elif require_llm:
+        raise LLMError(
+            "No Claude API key configured. Run `./start.sh setkey` to add one."
+        )
+    else:
+        log.warning(
+            "app.no_llm_key",
+            note="analysis disabled — dashboard and backtesting still work",
+        )
+        llm = DisabledLLM(settings)
+
     analyst = Analyst(llm, settings)
     reviewer = JournalReviewer(llm)
     risk = RiskManager(settings, portfolio)
