@@ -117,7 +117,7 @@ def test_every_endpoint_answers(client, path):
 
 
 def test_the_dashboard_page_serves(client):
-    resp = client.get("/")
+    resp = client.get("/desk")
     assert resp.status_code == 200
     assert "text/html" in resp.headers["content-type"]
     # The elements refresh() writes into must exist, or the page silently
@@ -201,7 +201,7 @@ def test_the_equity_endpoint_shapes_each_point_for_the_chart(client, tmp_path):
 
 
 def test_the_dashboard_has_the_elements_the_redesign_writes_into(client):
-    html = client.get("/").text
+    html = client.get("/desk").text
     for element in (
         "hero-equity", "hero-day", "hero-copy", "equity-chart", "kpis",
         "chips", "venues-wrap", "mark-left", "mark-right", "cta-primary",
@@ -215,7 +215,7 @@ def test_the_hero_is_bottom_anchored(client):
     element pinned to the floor. `margin-top:auto` on the floor row is what
     does it — without that the block floats and the whole point is lost.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert ".anchor-floor {" in html
     assert "margin-top:auto" in html
     assert "min-height:340px" in html
@@ -226,14 +226,14 @@ def test_the_equity_curve_is_the_hero_backdrop(client):
     Not a boxed chart any more. It sits behind the figures, under a veil
     that darkens toward the floor so the numbers read without a scrim.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert 'class="anchor-bg" id="equity-chart"' in html
     assert "anchor-veil" in html
 
 
 def test_the_primary_action_goes_quiet_when_nothing_is_waiting(client):
     """A CTA that invites a click when there is nothing to click is noise."""
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert "No signals waiting" in html
     assert "pill quiet" in html
 
@@ -243,7 +243,7 @@ def test_the_page_is_self_contained(client):
     No external script or stylesheet. This runs on localhost and must draw
     its own charts; a CDN would make the page need the internet.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert "<script src=" not in html
     assert "cdn." not in html
     assert "<link rel=\"stylesheet\"" not in html
@@ -251,7 +251,7 @@ def test_the_page_is_self_contained(client):
 
 def test_the_venue_table_is_hidden_until_there_are_two(client):
     """Hiding only the heading used to leave an empty box under Positions."""
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert 'id="venues-wrap" hidden' in html
     # And an author display rule must not override the hidden attribute.
     assert "[hidden] { display:none !important; }" in html
@@ -263,7 +263,7 @@ def test_approve_and_deny_survive_on_a_phone(client):
     rows become cards under the phone breakpoint so the buttons are not
     stranded inside a sideways-scrolling table.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert "#pending tr { display:block;" in html
     assert "#pending button { display:block; width:100%;" in html
     # The "nothing yet" row must not be hidden along with the header row.
@@ -288,7 +288,7 @@ def test_a_fresh_install_still_draws_something_behind_the_hero(client):
     hero genuinely empty, which is indistinguishable from a page that
     failed to load. Draw a baseline instead.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert 'host.innerHTML = ""' not in html, (
         "wiping the hero backdrop makes a fresh install look like a broken page"
     )
@@ -297,7 +297,7 @@ def test_a_fresh_install_still_draws_something_behind_the_hero(client):
 
 def test_the_empty_hero_says_why_it_is_empty(client):
     """Empty-because-new and empty-because-broken must not look the same."""
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert 'id="hero-note"' in html
     assert "The equity curve draws itself here" in html
     assert "anchor-note" in html
@@ -308,7 +308,7 @@ def test_the_empty_baseline_is_not_coloured_as_a_gain_or_a_loss(client):
     A green line across a brand new account implies a rise that has not
     happened. The no-history baseline is neutral and dashed.
     """
-    html = client.get("/").text
+    html = client.get("/desk").text
     note = html[html.index("No equity history recorded yet") - 400:
                 html.index("No equity history recorded yet") + 400]
     assert "stroke-dasharray" in note
@@ -326,7 +326,7 @@ def test_health_reports_the_build(client):
 
 
 def test_the_build_is_shown_on_the_page(client):
-    html = client.get("/").text
+    html = client.get("/desk").text
     assert "build ${health.build" in html
 
 
@@ -342,3 +342,90 @@ def test_the_build_id_degrades_instead_of_raising(monkeypatch):
         assert ws.build_id() == "unknown"
     finally:
         ws.build_id.cache_clear()
+
+
+# ---------------------------------------------------------------------- #
+# The opening page
+# ---------------------------------------------------------------------- #
+# "I want to see the hero be the opening page and then I click and get to
+# the trading platform." The hero had been built as a band at the top of
+# the dashboard, which shares a scroll with the risk table and therefore
+# reads as a header, not an opening. It is its own page at / now, and the
+# dashboard moved to /desk.
+
+
+def test_the_opening_page_is_the_hero_not_the_dashboard(client):
+    resp = client.get("/")
+    assert resp.status_code == 200
+    html = resp.text
+    assert 'class="stage"' in html
+    # None of the dashboard's working furniture belongs on the opening page.
+    for element in ("pending", "positions", "metrics", "kpis"):
+        assert f'id="{element}"' not in html
+
+
+def test_the_opening_page_links_through_to_the_desk(client):
+    """The one action on the page. Without it there is no way in."""
+    html = client.get("/").text
+    assert 'href="/desk"' in html
+    assert "Enter the trading desk" in html
+
+
+def test_the_desk_is_reachable_and_is_the_full_dashboard(client):
+    resp = client.get("/desk")
+    assert resp.status_code == 200
+    for element in ("banner", "pending", "positions", "venues", "metrics"):
+        assert f'id="{element}"' in resp.text
+
+
+def test_the_opening_page_fills_one_screen(client):
+    """
+    The Anchor composition is a single frame with the figures on the floor.
+    A short stage would put them mid-page and lose the whole effect.
+    """
+    html = client.get("/").text
+    assert "min-height:100dvh" in html
+    assert "margin-top:auto" in html
+
+
+def test_the_opening_page_shows_live_account_figures(client):
+    """A splash screen with invented numbers would be worse than none."""
+    html = client.get("/").text
+    for endpoint in ("/api/health", "/api/portfolio", "/api/equity"):
+        assert endpoint in html
+    assert 'id="equity"' in html
+
+
+def test_the_opening_page_still_opens_when_the_api_fails(client):
+    """
+    The button through to the desk is the point of the page. A broker
+    outage must not strand the user on a dead splash screen.
+    """
+    html = client.get("/").text
+    assert "catch" in html
+    assert "The desk still opens" in html
+
+
+def test_the_opening_page_marks_live_money_differently(client):
+    html = client.get("/").text
+    assert "LIVE MONEY" in html
+    assert "badge live" in html
+
+
+def test_the_opening_page_is_self_contained(client):
+    html = client.get("/").text
+    assert "<script src=" not in html
+    assert "cdn." not in html
+    assert '<link rel="stylesheet"' not in html
+
+
+def test_the_keyboard_alone_gets_you_in(client):
+    html = client.get("/").text
+    assert 'e.key === "Enter"' in html
+    assert "/desk" in html
+
+
+def test_the_desk_can_get_back_to_the_opening_page(client):
+    """A one-way door would strand you on the dashboard."""
+    html = client.get("/desk").text
+    assert 'href="/" class="mark"' in html

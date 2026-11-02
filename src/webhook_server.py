@@ -337,8 +337,328 @@ async def scan(background: BackgroundTasks) -> dict:
 #  Dashboard
 # ====================================================================== #
 @app.get("/", response_class=HTMLResponse)
+async def landing() -> str:
+    """
+    The opening page: one full-screen frame, then a click through to the desk.
+
+    This is a separate page rather than a band at the top of the dashboard.
+    A hero that shares a scroll with a risk table is not an opening — it is
+    a header, and it read as one.
+    """
+    return LANDING_HTML
+
+
+@app.get("/desk", response_class=HTMLResponse)
 async def dashboard() -> str:
     return DASHBOARD_HTML
+
+
+LANDING_HTML = """<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Trading desk</title>
+<style>
+  /* The opening frame, after Anchor. One screen, nothing to scroll, every
+     element pinned to the floor so the page reads as settled rather than
+     eager. The backdrop is the account's own equity curve: a tool should
+     be textured by its own data, not by a stock photograph. */
+  :root {
+    color-scheme: dark;
+    --bg:        #060610;
+    --surface-1: #0b0b15;
+    --surface-2: #11121c;
+    --stroke-1:  #171720;
+    --stroke-2:  #252537;
+    --accent:    #af60ff;
+    --accent-dim:#5d6294;
+    --text:      #ffffff;
+    --muted:     #a9a9ac;
+    --pos:       #46d19e;
+    --neg:       #ff6b6b;
+    --radius:    14px;
+  }
+  * { box-sizing:border-box; }
+  html, body { height:100%; }
+  body {
+    margin:0; background:var(--bg); color:var(--text);
+    font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    -webkit-font-smoothing:antialiased;
+  }
+  [hidden] { display:none !important; }
+
+  .stage {
+    position:relative; overflow:hidden;
+    min-height:100vh; min-height:100dvh;
+    display:flex; flex-direction:column;
+    background:
+      radial-gradient(120% 90% at 50% 0%, #11121c 0%, var(--surface-1) 55%, #07070f 100%);
+  }
+  .stage-bg { position:absolute; inset:0; opacity:.66; }
+  .stage-bg svg { width:100%; height:100%; display:block; }
+  .stage-veil {
+    position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(to bottom,
+      rgba(6,6,16,.20) 0%, rgba(6,6,16,.50) 45%, rgba(6,6,16,.94) 100%);
+  }
+  .stage-note {
+    position:absolute; z-index:1; left:0; right:0; top:42%;
+    transform:translateY(-50%); text-align:center; padding:0 28px;
+    color:var(--accent-dim); font-size:13px; pointer-events:none;
+  }
+
+  /* Top rail: who this is and what mode it is in. Nothing clickable up
+     here — the only action on this page is the one at the bottom. */
+  .top {
+    position:relative; z-index:1; display:flex; align-items:center;
+    justify-content:space-between; gap:16px; padding:26px 34px 0;
+  }
+  .brand { display:flex; align-items:center; gap:11px; font-size:14px;
+           letter-spacing:.01em; }
+  .brand .mark {
+    width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
+    background:var(--accent); color:#120a1e; font-size:13px;
+  }
+  .flags { display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+           justify-content:flex-end; }
+  .badge { padding:5px 11px; border-radius:999px; font-size:11px;
+           letter-spacing:.06em; white-space:nowrap; }
+  .paper { background:#af60ff1f; color:var(--accent); border:1px solid #af60ff44; }
+  .live  { background:#ff6b6b1f; color:var(--neg); border:1px solid #ff6b6b55; }
+  .chip  { padding:5px 11px; border-radius:999px; font-size:12px;
+           background:var(--surface-2); border:1px solid var(--stroke-2);
+           color:var(--muted); white-space:nowrap; }
+  .chip b { color:var(--text); font-weight:500; }
+
+  .marks {
+    position:relative; z-index:1; display:flex; justify-content:space-between;
+    gap:14px; padding:24px 34px 0; font-size:11px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted);
+  }
+  .marks span { min-width:0; white-space:nowrap; overflow:hidden;
+                text-overflow:ellipsis; }
+  .marks span:last-child { text-align:right; }
+
+  /* The floor. margin-top:auto is the whole composition: whatever the
+     viewport height, the figures sit on the bottom edge. */
+  .floor {
+    position:relative; z-index:1; margin-top:auto;
+    display:flex; align-items:flex-end; justify-content:space-between;
+    gap:34px; padding:0 34px 34px;
+  }
+  .lead { min-width:0; }
+  .lead .label { font-size:11px; letter-spacing:.14em; text-transform:uppercase;
+                 color:var(--muted); }
+  .lead .figure {
+    font-size:clamp(46px, 8.5vw, 92px); line-height:1.0; font-weight:600;
+    letter-spacing:-.038em; margin-top:10px;
+  }
+  .lead .figure.sm { font-size:clamp(17px, 2.2vw, 24px); font-weight:500;
+                     margin-top:10px; letter-spacing:-.01em; }
+  .pos { color:var(--pos); } .neg { color:var(--neg); }
+
+  .aside { max-width:430px; }
+  .copy { color:var(--muted); font-size:14px; line-height:1.55; margin:0 0 20px; }
+  .cta { display:flex; gap:12px; align-items:center; justify-content:flex-end;
+         flex-wrap:wrap; }
+  .enter {
+    display:inline-flex; align-items:center; gap:9px; text-decoration:none;
+    background:var(--accent); color:#140a22; font-size:14.5px; font-weight:600;
+    padding:14px 24px; border-radius:999px; letter-spacing:-.005em;
+    transition:transform .14s ease, filter .14s ease;
+  }
+  .enter:hover { filter:brightness(1.08); transform:translateY(-1px); }
+  .enter:focus-visible { outline:2px solid #fff; outline-offset:3px; }
+  .ghost {
+    text-decoration:none; color:var(--muted); font-size:14px;
+    padding:13px 4px; border-bottom:1px solid transparent;
+  }
+  .ghost:hover { color:var(--text); border-bottom-color:var(--stroke-2); }
+  .hint { color:var(--accent-dim); font-size:11.5px; margin:14px 0 0;
+          text-align:right; }
+  .hint kbd {
+    font-family:ui-monospace,Menlo,monospace; font-size:11px;
+    background:var(--surface-2); border:1px solid var(--stroke-2);
+    border-radius:5px; padding:2px 6px; color:var(--muted);
+  }
+
+  @media (max-width: 760px) {
+    .top { padding:18px 18px 0; flex-direction:column; align-items:flex-start; }
+    .flags { justify-content:flex-start; }
+    .marks { padding:18px 18px 0; font-size:10px; }
+    .floor { flex-direction:column; align-items:stretch; gap:22px;
+             padding:0 18px 24px; }
+    .aside { max-width:none; }
+    /* Side by side, the button's label wrapped to two lines and left the
+       pill lopsided against the link. Stack them and let the button own
+       the full width — it is the only thing to do on this screen. */
+    .cta { flex-direction:column; align-items:stretch; gap:6px; }
+    .enter { justify-content:center; white-space:nowrap; padding:16px 20px; }
+    .ghost { text-align:center; padding:12px 4px; }
+    /* No keyboard to press Enter on. */
+    .hint { display:none; }
+  }
+</style>
+</head>
+<body>
+
+<main class="stage">
+  <div class="stage-bg" id="equity-chart"></div>
+  <div class="stage-veil"></div>
+  <p class="stage-note" id="note" hidden></p>
+
+  <div class="top">
+    <div class="brand"><span class="mark">&#9650;</span> <span>Trading desk</span></div>
+    <div class="flags" id="flags"></div>
+  </div>
+
+  <div class="marks">
+    <span id="mark-left">&nbsp;</span>
+    <span id="mark-right">&nbsp;</span>
+  </div>
+
+  <div class="floor">
+    <div class="lead">
+      <div class="label">Equity</div>
+      <div class="figure" id="equity">&mdash;</div>
+      <div class="figure sm" id="day">&nbsp;</div>
+    </div>
+    <div class="aside">
+      <p class="copy" id="copy">Reading the account&hellip;</p>
+      <div class="cta">
+        <a class="enter" href="/desk" id="enter">Enter the trading desk <span>&rarr;</span></a>
+        <a class="ghost" href="/desk#approvals">Pending approvals</a>
+      </div>
+      <p class="hint">Press <kbd>Enter</kbd> to continue</p>
+    </div>
+  </div>
+</main>
+
+<script>
+let CUR = "$";
+const money = n => (n<0?"-":"") + CUR +
+  Math.abs(n).toLocaleString(undefined,{minimumFractionDigits:2,maximumFractionDigits:2});
+const pct = n => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
+const esc = s => String(s ?? "").replace(/[&<>"]/g,
+  c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+
+// The curve, drawn into the upper frame so the floor stays clear for the
+// figures. Inline SVG on purpose: this page is served from localhost and
+// must not need the internet to draw a line.
+function curve(points) {
+  const host = document.getElementById("equity-chart");
+  const note = document.getElementById("note");
+  const W = 1000, H = 1000, TOP = 120, BOT = H * 0.60;
+
+  // Fewer than two readings is not a curve. An empty backdrop here would
+  // make the opening screen look like a page that failed to load, so draw
+  // the baseline the account is sitting on — dashed and neutral, because a
+  // green line across a new account implies a rise that has not happened.
+  if (points.length < 2) {
+    const MID = (TOP + BOT) / 2;
+    host.innerHTML = `
+      <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+           aria-label="No equity history recorded yet">
+        <line x1="0" y1="${MID}" x2="${W}" y2="${MID}" stroke="var(--accent-dim)"
+              stroke-width="1.5" stroke-dasharray="2 9" opacity=".85"
+              vector-effect="non-scaling-stroke"/>
+      </svg>`;
+    if (note) {
+      note.textContent = points.length
+        ? "Your equity curve draws itself here once there is more than one reading."
+        : "Your equity curve draws itself here once the bot records its first reading.";
+      note.hidden = false;
+    }
+    return;
+  }
+  if (note) note.hidden = true;
+
+  const ys = points.map(p => p.equity);
+  const lo = Math.min(...ys), hi = Math.max(...ys);
+  const flat = hi === lo, span = flat ? 1 : hi - lo;
+  const x = i => i * W / (points.length - 1);
+  const y = v => flat ? (TOP + BOT) / 2 : BOT - ((v - lo) / span) * (BOT - TOP);
+  const line = points.map((p, i) =>
+    `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join("");
+  const up = ys[ys.length - 1] >= ys[0];
+  const stroke = up ? "var(--pos)" : "var(--neg)";
+
+  host.innerHTML = `
+    <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+         aria-label="Equity over the last ${points.length} readings">
+      <defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1">
+        <stop offset="0%" stop-color="${stroke}" stop-opacity=".26"/>
+        <stop offset="100%" stop-color="${stroke}" stop-opacity="0"/>
+      </linearGradient></defs>
+      <path d="${line}L${x(points.length-1).toFixed(1)},${H}L0,${H}Z" fill="url(#f)"/>
+      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.2"
+            vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
+    </svg>`;
+
+  const m = document.getElementById("mark-right");
+  if (m) m.textContent += flat ? ` · flat at ${money(hi)}`
+                               : ` · ${money(lo)} – ${money(hi)}`;
+}
+
+async function load() {
+  // The page must open even when the broker is unreachable: the button
+  // through to the desk is the point, and it is already in the markup.
+  try {
+    const [health, pf, eq] = await Promise.all(
+      ["/api/health", "/api/portfolio", "/api/equity"]
+        .map(u => fetch(u).then(r => r.json())));
+
+    CUR = health.currency_symbol || "$";
+
+    document.getElementById("flags").innerHTML =
+      (health.mode === "live"
+        ? '<span class="badge live">LIVE MONEY</span>'
+        : '<span class="badge paper">PAPER</span>') +
+      `<span class="chip">Venue <b>${esc(health.broker)}</b></span>` +
+      `<span class="chip">build ${esc(health.build || "unknown")}</span>`;
+
+    document.getElementById("equity").textContent = money(pf.equity);
+
+    const day = document.getElementById("day");
+    day.textContent = `${pct(pf.day_pnl_pct)}  ${money(pf.day_pnl)} today`;
+    day.className = "figure sm " +
+      (pf.day_pnl_pct > 0 ? "pos" : pf.day_pnl_pct < 0 ? "neg" : "");
+
+    document.getElementById("mark-left").textContent =
+      `${health.mode === "live" ? "Live" : "Paper"} · ${health.broker} · ${health.execution_mode} mode`;
+    document.getElementById("mark-right").textContent =
+      `${health.symbols.length} symbols · ${(pf.venues || []).length || 1} venue(s)`;
+
+    // Every line a figure, not an adjective.
+    document.getElementById("copy").textContent =
+      `${money(pf.cash)} cash, ${money(pf.exposure)} exposed ` +
+      `(${pf.exposure_pct.toFixed(1)}%). ${money(pf.open_risk)} at risk across ` +
+      `${pf.positions.length} position(s), ` +
+      `${pf.open_risk_pct.toFixed(2)}% of equity against a ` +
+      `${(health.max_portfolio_risk_pct ?? 0).toFixed(1)}% cap.`;
+
+    curve(eq.points || []);
+  } catch (e) {
+    document.getElementById("copy").textContent =
+      "Cannot reach the bot's API right now. The desk still opens — " +
+      "run ./start.sh doctor if the figures stay empty.";
+    curve([]);
+  }
+}
+
+// Enter opens the desk, so the keyboard alone gets you in.
+addEventListener("keydown", e => {
+  if (e.key === "Enter" && !e.metaKey && !e.ctrlKey && !e.altKey) {
+    location.href = "/desk";
+  }
+});
+
+load();
+</script>
+</body>
+</html>
+"""
 
 
 DASHBOARD_HTML = """<!doctype html>
@@ -411,6 +731,13 @@ DASHBOARD_HTML = """<!doctype html>
     width:34px; height:34px; border-radius:10px; margin-bottom:14px;
     background:linear-gradient(145deg,var(--accent),#6d3bb0);
     display:grid; place-items:center; font-size:15px; color:#fff;
+    text-decoration:none; border:0;
+  }
+  /* The mark is the way back to the opening page, so it must not pick up
+     the plain rail-link hover and lose its gradient. */
+  .rail a.mark:hover, .rail a.mark:focus-visible {
+    background:linear-gradient(145deg,var(--accent),#6d3bb0);
+    filter:brightness(1.12); border:0;
   }
   .rail a {
     width:40px; height:40px; border-radius:11px; display:grid; place-items:center;
@@ -653,7 +980,8 @@ DASHBOARD_HTML = """<!doctype html>
 <body>
 
 <nav class="rail" aria-label="Sections">
-  <div class="mark">&#9650;</div>
+  <a href="/" class="mark" title="Back to the opening page"
+     aria-label="Back to the opening page">&#9650;</a>
   <a href="#top" class="on" title="Overview" aria-label="Overview">&#9632;</a>
   <a href="#approvals" title="Awaiting approval" aria-label="Awaiting approval">&#10003;</a>
   <a href="#positions-sec" title="Positions" aria-label="Positions">&#9644;</a>

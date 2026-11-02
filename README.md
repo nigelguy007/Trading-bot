@@ -196,7 +196,16 @@ daily stop ever saw. See **[docs/multi-broker.md](docs/multi-broker.md)**.
 trailing spaces, placeholder keys, a `.env` that isn't gitignored, missing
 packages, and whether live trading is (correctly) still switched off.
 
-### The dashboard
+### The opening page and the dashboard
+
+Two pages:
+
+| URL | What it is |
+|---|---|
+| `/` | The opening page — one full screen: equity, today's move, and the account in a sentence, over your own equity curve. One button through to the desk. |
+| `/desk` | The trading desk: the working dashboard below. |
+
+The triangle at the top of the desk's left rail goes back to the opening page.
 
 ![Dashboard](docs/dashboard-desktop.png)
 
@@ -382,7 +391,8 @@ break.
 
 - **Multi-agent debate** (`--debate`) — a bull, a bear, and a risk manager who
   decides. A setup has to survive an adversary before it becomes a signal.
-- **Portfolio dashboard** — `serve`, then open `http://localhost:8001`.
+- **Portfolio dashboard** — `serve`, then open `http://localhost:8001`
+  (the opening page; the desk itself is at `/desk`).
 - **Mobile approve/deny** — Telegram buttons, above.
 - **Multi-broker routing** — `BrokerRouter` routes by asset class. Set
   `BROKER=ig` for a UK spread betting account (IG Index / IG Markets); sizes
