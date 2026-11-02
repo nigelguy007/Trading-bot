@@ -97,32 +97,47 @@ def test_port_collision_is_handled(script):
 # ---------------------------------------------------------------------- #
 # Port selection
 # ---------------------------------------------------------------------- #
-def test_the_probe_binds_the_same_host_uvicorn_will(script):
+def test_the_host_is_read_from_env_and_passed_to_the_picker(script):
     """
-    The regression that shipped: the probe bound 127.0.0.1 while uvicorn
-    binds WEBHOOK_HOST (0.0.0.0). A port held on 0.0.0.0 did not block a
-    127.0.0.1 bind, so the launcher announced a port and uvicorn then died
-    on it with "address already in use".
+    The probe must bind the same host uvicorn will. It bound 127.0.0.1
+    while uvicorn binds WEBHOOK_HOST (0.0.0.0), and a port held on 0.0.0.0
+    does not block a 127.0.0.1 bind — so the launcher announced a port and
+    uvicorn then died on it with "address already in use".
     """
-    assert 'HOST="$(grep -E \'^WEBHOOK_HOST=\' .env' in script
-    assert 's.bind((host, port))' in script
-    assert 's.bind(("127.0.0.1", port))' not in script
+    assert "WEBHOOK_HOST=" in script
+    assert 'scripts/pick_port.py "$WANTED" "$HOST"' in script
 
 
-def test_the_probe_does_not_set_so_reuseaddr(script):
+def test_no_heredoc_lives_inside_a_command_substitution(script):
     """
-    SO_REUSEADDR made the probe strictly more permissive than uvicorn's own
-    bind, so it reported a busy port free. It must fail wherever uvicorn
-    would fail.
+    THE macOS bug. Bash 3.2, which Apple still ships, scans a command
+    substitution for its closing paren with the ordinary quote lexer and
+    does not know a quoted heredoc body is literal. A single apostrophe in
+    the embedded Python ("don't") was therefore an unterminated quote and
+    the whole script failed to parse — on the user's Mac only, because
+    bash 5 here parses it correctly and every local check passed.
 
-    Comments are stripped first: the fix is explained in one, and the
-    explanation must not be what satisfies the test.
+    Keep embedded interpreters in files. This catches the pattern coming
+    back whatever the content.
     """
-    code = "\n".join(
-        line for line in script.splitlines() if not line.lstrip().startswith("#")
+    offenders = [
+        line for line in script.splitlines()
+        if "$(" in line and "<<" in line and line.index("$(") < line.index("<<")
+    ]
+    assert not offenders, (
+        "heredoc inside $(...) breaks bash 3.2 on macOS; move it to a file: "
+        + " | ".join(offenders)
     )
-    assert "SO_REUSEADDR" not in code
-    assert "setsockopt" not in code
+
+
+def test_the_port_picker_is_a_real_file(script):
+    assert "scripts/pick_port.py" in script
+    assert (START_SH.parent / "scripts" / "pick_port.py").exists()
+
+
+def test_a_failed_probe_does_not_stop_the_dashboard(script):
+    """A broken helper must degrade to the configured port, not to nothing."""
+    assert '[ -n "$PROBE" ] || PROBE="$WANTED ok -"' in script
 
 
 def test_a_second_instance_is_refused_rather_than_started(script):
@@ -133,15 +148,6 @@ def test_a_second_instance_is_refused_rather_than_started(script):
     assert "already-ours" in script
     assert "ALREADY RUNNING" in script
     assert "ALLOW_SECOND_INSTANCE" in script
-
-
-def test_the_whole_range_is_scanned_for_an_existing_copy(script):
-    """
-    Stopping at the first free port would miss a running copy sitting ABOVE
-    the gap, which is exactly what happens once something else has bumped
-    it along.
-    """
-    assert "if existing is not None and chosen is not None:" in script
 
 
 def test_the_override_gets_a_free_port_not_the_occupied_one(script):

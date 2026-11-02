@@ -199,73 +199,20 @@ if [ "$COMMAND" = "serve" ]; then
     HOST="${HOST:-0.0.0.0}"
 
     # Another app may already own the port — 8000/8001 are popular. Binding
-    # second fails, or worse the browser shows you the other app and you think
-    # this one is broken. Find a free port and say which one we took.
+    # second fails, or worse the browser shows you the other app and you
+    # think this one is broken. scripts/pick_port.py finds a free one and
+    # spots a copy of this bot that is already running.
     #
-    # The probe must bind EXACTLY as uvicorn will. An earlier version bound
-    # 127.0.0.1 with SO_REUSEADDR while uvicorn binds 0.0.0.0 without it —
-    # strictly more permissive, so it declared a port free and uvicorn then
-    # died on it with "address already in use". Same host, no SO_REUSEADDR.
-    PROBE="$("$VPY" - "$WANTED" "$HOST" <<'PY'
-import json, socket, sys, urllib.error, urllib.request
+    # It is a FILE, not a heredoc here, and must stay one: macOS ships bash
+    # 3.2, which scans a command substitution for its closing paren with the
+    # ordinary quote lexer and does not know a quoted heredoc body is
+    # literal. One apostrophe in the embedded Python was an unterminated
+    # quote and the whole script failed to parse — on the user's Mac only,
+    # since bash 5 here gets it right.
+    PROBE="$("$VPY" scripts/pick_port.py "$WANTED" "$HOST" 2>/dev/null)"
+    # Never let a probe failure stop the dashboard starting.
+    [ -n "$PROBE" ] || PROBE="$WANTED ok -"
 
-wanted, host = int(sys.argv[1]), (sys.argv[2] or "0.0.0.0")
-
-
-def taken(port: int) -> bool:
-    with socket.socket() as s:
-        try:
-            s.bind((host, port))
-        except OSError:
-            return True
-    # A listener on a different interface would not block the bind above,
-    # so also check whether anything actually answers.
-    with socket.socket() as c:
-        c.settimeout(0.2)
-        try:
-            c.connect(("127.0.0.1", port))
-            return True
-        except OSError:
-            return False
-
-
-def is_this_bot(port: int) -> bool:
-    """Our own dashboard answering, rather than some unrelated app."""
-    try:
-        with urllib.request.urlopen(f"http://127.0.0.1:{port}/api/health", timeout=0.6) as r:
-            return "execution_mode" in json.load(r)
-    except (urllib.error.URLError, OSError, ValueError):
-        return False
-
-
-# Walk the range looking for two separate things: the first FREE port, and
-# any port already held by OUR OWN dashboard.
-#
-# Both, because they are different answers. A copy already running means
-# don't start a second one — two schedulers is double the scanning, double
-# the Claude bill, and in auto mode double the orders. But if you override
-# that, the second copy still needs a port that is actually free, not the
-# one the first copy is sitting on.
-#
-# The whole range is scanned rather than stopping at the first free port:
-# the running copy may itself have been bumped along by something else, so
-# it can be ABOVE the first gap.
-existing = None
-chosen = None
-for candidate in [wanted, *range(wanted + 1, wanted + 40)]:
-    if taken(candidate):
-        if existing is None and is_this_bot(candidate):
-            existing = candidate
-    elif chosen is None:
-        chosen = candidate
-    if existing is not None and chosen is not None:
-        break
-
-port = chosen if chosen is not None else wanted
-state = "already-ours" if existing is not None else ("ok" if chosen is not None else "none-free")
-print(f"{port} {state} {existing if existing is not None else '-'}")
-PY
-)"
     # "<free-port> <state> <port-of-any-existing-copy|->"
     PORT="$(printf '%s' "$PROBE" | awk '{print $1}')"
     STATE="$(printf '%s' "$PROBE" | awk '{print $2}')"
