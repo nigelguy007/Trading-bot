@@ -186,13 +186,43 @@ case "$COMMAND" in
 esac
 
 if [ "$COMMAND" = "serve" ]; then
-    PORT="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
-    PORT="${PORT:-8001}"
+    WANTED="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+    WANTED="${WANTED:-8001}"
+
+    # Another app may already own the port — 8000/8001 are popular. Binding
+    # second fails, or worse the browser shows you the other app and you think
+    # this one is broken. Find a free port and say which one we took.
+    PORT="$("$VPY" - "$WANTED" <<'PY'
+import socket, sys
+wanted = int(sys.argv[1])
+def free(port):
+    with socket.socket() as s:
+        s.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
+        try:
+            s.bind(("127.0.0.1", port))
+            return True
+        except OSError:
+            return False
+for candidate in [wanted, *range(wanted + 1, wanted + 40)]:
+    if free(candidate):
+        print(candidate)
+        break
+else:
+    print(wanted)
+PY
+)"
+
     say ""
+    if [ "$PORT" != "$WANTED" ]; then
+        warn "Port $WANTED is already in use by another program."
+        say  "  Using port ${PORT} instead."
+        say  ""
+    fi
     ok "Starting the dashboard"
     say "  Open this in your browser:  ${GREEN}http://localhost:${PORT}${OFF}"
     say "  ${DIM}Press Ctrl-C here to stop it.${OFF}"
     say ""
+    export WEBHOOK_PORT="$PORT"
 fi
 
 exec "$VPY" -m src.cli "$@"
