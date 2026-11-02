@@ -19,8 +19,22 @@ icon rail, a greeting header, big light numerals with small muted captions,
 and a dense two-column metric table. Its restraint is the part worth
 stealing: colour belongs to data, nothing else.
 
+**Anchor** (Scrolltide) supplied the hero composition. Its whole move is
+that nothing floats: a tall frame with the top two thirds left empty, the
+headline pinned bottom-left, supporting copy and the action pair bottom-right,
+micro-labels at the top corners. In their words, it "sits low and firm in the
+frame rather than floating, so the page reads as settled rather than eager" —
+and it is explicitly built for "financial and compliance tools", where a
+specific number outperforms a strong adjective. That is this dashboard's job
+description.
+
+Anchor's backdrop is a full-bleed photograph. A photo would be wrong in a
+tool, so the equity curve takes its place: the page is textured by its own
+data, drawn into the upper band under a veil that darkens toward the floor
+so the figures read without needing a box behind them.
+
 Neither one's markup, CSS or assets were used. This is an original page
-informed by both.
+informed by all three.
 
 ## Tokens
 

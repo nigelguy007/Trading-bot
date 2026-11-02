@@ -411,6 +411,69 @@ DASHBOARD_HTML = """<!doctype html>
                  font-family:ui-monospace,Menlo,monospace; font-size:12.5px; }
 
   /* --- Hero figures (Alpha Ledger's big light numerals) -------------- */
+  /* --- The hero, after Anchor ---------------------------------------
+     The whole move is that nothing floats. The frame is tall, the top
+     two thirds are deliberately empty, and every element is pinned to
+     the floor, so the block reads as settled rather than eager. The
+     backdrop is the equity curve instead of a photograph: a tool should
+     be textured by its own data. */
+  .anchor {
+    position:relative; overflow:hidden; margin-bottom:14px;
+    min-height:340px; display:flex; flex-direction:column;
+    border:1px solid var(--stroke-1); border-radius:var(--radius);
+    background:
+      radial-gradient(120% 90% at 50% 0%, #11121c 0%, var(--surface-1) 55%, #07070f 100%);
+  }
+  .anchor-bg { position:absolute; inset:0; opacity:.66; }
+  .anchor-bg svg { width:100%; height:100%; display:block; }
+  /* Darkens toward the floor so the figures read straight off the curve
+     without needing a box behind them. */
+  .anchor-veil {
+    position:absolute; inset:0; pointer-events:none;
+    background:linear-gradient(to bottom,
+      rgba(6,6,16,.25) 0%, rgba(6,6,16,.55) 45%, rgba(6,6,16,.93) 100%);
+  }
+  .anchor-marks {
+    position:relative; z-index:1; display:flex; justify-content:space-between;
+    padding:18px 22px 0; font-size:11px; letter-spacing:.1em;
+    text-transform:uppercase; color:var(--muted); gap:14px;
+  }
+  /* One line each. Wrapped labels eat the empty space the composition
+     depends on and crowd the figure beneath them. */
+  .anchor-marks span {
+    min-width:0; white-space:nowrap; overflow:hidden; text-overflow:ellipsis;
+  }
+  .anchor-marks span:last-child { text-align:right; }
+  .anchor-floor {
+    position:relative; z-index:1; margin-top:auto;
+    display:flex; align-items:flex-end; justify-content:space-between;
+    gap:28px; padding:0 22px 22px;
+  }
+  .anchor-lead { min-width:0; }
+  .anchor-lead .figure {
+    font-size:58px; line-height:1.02; font-weight:600; letter-spacing:-.035em;
+    margin-top:8px;
+  }
+  .anchor-lead .figure.sm { font-size:22px; font-weight:500; margin-top:6px; }
+  /* The block sits right; the prose inside it reads left, as Anchor's does.
+     Right-aligning the text itself leaves a single word stranded on the
+     last line and makes every line start in a different place. */
+  .anchor-aside { max-width:400px; text-align:left; }
+  .anchor-copy { color:var(--muted); font-size:13.5px; font-weight:400;
+                 margin:0 0 15px; line-height:1.5; }
+  .anchor-cta { display:flex; gap:10px; justify-content:flex-end; align-items:center; }
+  .pill {
+    background:#fff; color:#0b0b15; border-radius:999px; padding:10px 20px;
+    font-size:13.5px; font-weight:500; text-decoration:none; white-space:nowrap;
+  }
+  .pill:hover { background:#e9e4f2; }
+  .pill.quiet { background:var(--surface-3); color:var(--muted);
+                border:1px solid var(--stroke-2); }
+  .ghost { color:var(--text); font-size:13.5px; text-decoration:none;
+           padding:10px 4px; white-space:nowrap; opacity:.85; }
+  .ghost:hover { opacity:1; }
+  .ghost span { color:var(--muted); }
+
   .hero { display:grid; grid-template-columns:1.25fr 1fr 1fr; gap:14px; margin-bottom:14px; }
   .panel { background:var(--surface-1); border:1px solid var(--stroke-1);
            border-radius:var(--radius); padding:18px 20px; min-width:0; }
@@ -493,6 +556,20 @@ DASHBOARD_HTML = """<!doctype html>
     .hero { grid-template-columns:1fr; gap:10px; }
     .figure { font-size:33px; }
     .figure.sm { font-size:24px; }
+
+    /* The hero keeps its bottom-anchored feel but stops being a left/right
+       split: at 390px the two columns would each be too narrow to read, and
+       a right-aligned CTA ends up stranded in a corner. */
+    .anchor { min-height:300px; }
+    .anchor-marks { padding:14px 16px 0; font-size:10px; gap:10px; }
+    .anchor-floor { flex-direction:column; align-items:stretch;
+                    gap:16px; padding:0 16px 18px; }
+    .anchor-lead .figure { font-size:42px; }
+    .anchor-lead .figure.sm { font-size:18px; }
+    .anchor-aside { max-width:none; text-align:left; }
+    .anchor-cta { justify-content:stretch; }
+    .pill { flex:1; text-align:center; padding:13px 16px; }
+    .ghost { padding:13px 8px; }
     .kpis { grid-template-columns:1fr; gap:0; }
     .hide-sm { display:none; }
     .cards { grid-template-columns:repeat(auto-fit,minmax(128px,1fr)); gap:9px; }
@@ -551,27 +628,33 @@ DASHBOARD_HTML = """<!doctype html>
 <div id="banner"></div>
 
 <!-- The three figures worth seeing from across the room. -->
-<section class="hero">
-  <div class="panel keyed">
-    <div class="label">Equity</div>
-    <div class="figure" id="hero-equity">—</div>
-    <div class="delta" id="hero-delta">&nbsp;</div>
-  </div>
-  <div class="panel">
-    <div class="label">Day P&amp;L</div>
-    <div class="figure sm" id="hero-day">—</div>
-    <div class="delta" id="hero-day-sub">&nbsp;</div>
-  </div>
-  <div class="panel">
-    <div class="label">Open risk</div>
-    <div class="figure sm" id="hero-risk">—</div>
-    <div class="delta" id="hero-risk-sub">&nbsp;</div>
-  </div>
-</section>
+<!-- The hero, after Anchor: one tall frame with everything pinned to the
+     bottom and the space above left empty. The backdrop is the equity curve
+     itself rather than a photograph — a tool should be textured by its own
+     data, and we already record it. -->
+<section class="anchor" id="hero">
+  <div class="anchor-bg" id="equity-chart"></div>
+  <div class="anchor-veil"></div>
 
-<section class="panel" style="margin-bottom:14px">
-  <div class="label">Equity curve</div>
-  <div id="equity-chart"></div>
+  <div class="anchor-marks">
+    <span id="mark-left">&nbsp;</span>
+    <span id="mark-right">&nbsp;</span>
+  </div>
+
+  <div class="anchor-floor">
+    <div class="anchor-lead">
+      <div class="label">Equity</div>
+      <div class="figure" id="hero-equity">—</div>
+      <div class="figure sm" id="hero-day">&nbsp;</div>
+    </div>
+    <div class="anchor-aside">
+      <p class="anchor-copy" id="hero-copy">&nbsp;</p>
+      <div class="anchor-cta">
+        <a class="pill" id="cta-primary" href="#approvals">Review signals</a>
+        <a class="ghost" href="#positions-sec">Positions <span>&rsaquo;</span></a>
+      </div>
+    </div>
+  </div>
 </section>
 
 <section class="panel">
@@ -627,20 +710,21 @@ function kpi(label, value, klass="") {
 // make it depend on the internet to draw a line.
 function sparkline(points) {
   const host = document.getElementById("equity-chart");
-  if (points.length < 2) {
-    host.innerHTML = `<div class="chart-empty">
-      Not enough history yet — the curve appears once the bot has run a few cycles.</div>`;
-    return;
-  }
-  const W = 1000, H = 150, PAD = 6;
+  // The curve IS the hero backdrop, so an empty one leaves the gradient
+  // alone rather than putting an apologetic message in the middle of it.
+  if (points.length < 2) { host.innerHTML = ""; return; }
+  const W = 1000, H = 340, PAD = 0;
   const ys = points.map(p => p.equity);
   const lo = Math.min(...ys), hi = Math.max(...ys);
   const flat = hi === lo;
   // A flat account divides by zero. Centre the line rather than letting it
   // sit on the floor, which reads as "equity collapsed" at a glance.
   const span = flat ? 1 : hi - lo;
+  // The curve lives behind the text, so it is drawn into the UPPER part of
+  // the frame: the Anchor composition keeps the floor clear for the figures.
+  const TOP = 40, BOT = H * 0.62;
   const x = i => PAD + i * (W - PAD * 2) / (points.length - 1);
-  const y = v => flat ? H / 2 : H - PAD - ((v - lo) / span) * (H - PAD * 2);
+  const y = v => flat ? (TOP + BOT) / 2 : BOT - ((v - lo) / span) * (BOT - TOP);
 
   const line = points.map((p, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(p.equity).toFixed(1)}`).join("");
   const area = `${line}L${x(points.length - 1).toFixed(1)},${H}L${x(0).toFixed(1)},${H}Z`;
@@ -652,17 +736,23 @@ function sparkline(points) {
          aria-label="Equity over the last ${points.length} readings">
       <defs>
         <linearGradient id="eqfill" x1="0" y1="0" x2="0" y2="1">
-          <stop offset="0%" stop-color="${stroke}" stop-opacity=".22"/>
+          <stop offset="0%" stop-color="${stroke}" stop-opacity=".28"/>
           <stop offset="100%" stop-color="${stroke}" stop-opacity="0"/>
         </linearGradient>
       </defs>
       <path d="${area}" fill="url(#eqfill)"/>
-      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2"
+      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.2"
             vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
     </svg>
-    <div class="delta">${points.length} readings &nbsp;·&nbsp; ${
-      flat ? "flat at " + money(hi)
-           : "low " + money(lo) + " &nbsp;·&nbsp; high " + money(hi)}</div>`;
+    `;
+  // The range caption belongs in the micro-label, not floating over the
+  // curve. sparkline() runs after the labels are written, so it appends.
+  const mark = document.getElementById("mark-right");
+  if (mark) {
+    mark.textContent += flat
+      ? ` · flat at ${money(hi)}`
+      : ` · ${money(lo)} – ${money(hi)}`;
+  }
 }
 function table(el, headers, rows) {
   const head = headers.map(h =>
@@ -720,21 +810,35 @@ async function refresh() {
     }
     document.getElementById("banner").innerHTML = banners;
 
-    // --- Hero figures ---
+    // --- Hero ---
+    // Anchor states facts plainly and prefers a specific number to an
+    // adjective, which suits a risk tool exactly. Every line here is a
+    // figure, not a claim.
     document.getElementById("hero-equity").textContent = money(pf.equity);
-    document.getElementById("hero-delta").innerHTML =
-      `${money(pf.cash)} cash &nbsp;·&nbsp; ${money(pf.exposure)} exposed
-       (${pf.exposure_pct.toFixed(1)}%)`;
 
     const day = document.getElementById("hero-day");
-    day.textContent = pct(pf.day_pnl_pct);
+    day.textContent = `${pct(pf.day_pnl_pct)}  ${money(pf.day_pnl)} today`;
     day.className = "figure sm " + cls(pf.day_pnl_pct);
-    document.getElementById("hero-day-sub").textContent =
-      `${money(pf.day_pnl)} today · limit ${(-(health.daily_loss_limit_pct ?? 0)).toFixed(1)}%`;
 
-    document.getElementById("hero-risk").textContent = money(pf.open_risk);
-    document.getElementById("hero-risk-sub").textContent =
-      `${pf.open_risk_pct.toFixed(2)}% of equity across ${pf.positions.length} position(s)`;
+    document.getElementById("mark-left").textContent =
+      `${health.mode === "live" ? "Live" : "Paper"} · ${health.broker}`;
+    document.getElementById("mark-right").textContent =
+      `${health.symbols.length} symbols · ${(pf.venues || []).length || 1} venue(s)`;
+
+    document.getElementById("hero-copy").innerHTML =
+      `${money(pf.cash)} cash, ${money(pf.exposure)} exposed
+       (${pf.exposure_pct.toFixed(1)}%). ${money(pf.open_risk)} still at risk across
+       ${pf.positions.length} position(s), ${pf.open_risk_pct.toFixed(2)}% of equity
+       against a ${(health.max_portfolio_risk_pct ?? 0).toFixed(1)}% cap.`;
+
+    // The primary action is whatever is actually waiting for you, and it
+    // goes quiet rather than inviting a click when nothing is.
+    const waiting = (pend.pending || []).length;
+    const primary = document.getElementById("cta-primary");
+    primary.textContent = waiting
+      ? `Review ${waiting} pending signal${waiting > 1 ? "s" : ""}`
+      : "No signals waiting";
+    primary.className = waiting ? "pill" : "pill quiet";
 
     sparkline(eq.points || []);
 

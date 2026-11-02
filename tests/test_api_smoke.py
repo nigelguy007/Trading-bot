@@ -203,10 +203,39 @@ def test_the_equity_endpoint_shapes_each_point_for_the_chart(client, tmp_path):
 def test_the_dashboard_has_the_elements_the_redesign_writes_into(client):
     html = client.get("/").text
     for element in (
-        "hero-equity", "hero-day", "hero-risk", "equity-chart", "kpis",
-        "chips", "venues-wrap",
+        "hero-equity", "hero-day", "hero-copy", "equity-chart", "kpis",
+        "chips", "venues-wrap", "mark-left", "mark-right", "cta-primary",
     ):
         assert f'id="{element}"' in html, f"the page is missing #{element}"
+
+
+def test_the_hero_is_bottom_anchored(client):
+    """
+    The Anchor composition: a tall frame with the top left empty and every
+    element pinned to the floor. `margin-top:auto` on the floor row is what
+    does it — without that the block floats and the whole point is lost.
+    """
+    html = client.get("/").text
+    assert ".anchor-floor {" in html
+    assert "margin-top:auto" in html
+    assert "min-height:340px" in html
+
+
+def test_the_equity_curve_is_the_hero_backdrop(client):
+    """
+    Not a boxed chart any more. It sits behind the figures, under a veil
+    that darkens toward the floor so the numbers read without a scrim.
+    """
+    html = client.get("/").text
+    assert 'class="anchor-bg" id="equity-chart"' in html
+    assert "anchor-veil" in html
+
+
+def test_the_primary_action_goes_quiet_when_nothing_is_waiting(client):
+    """A CTA that invites a click when there is nothing to click is noise."""
+    html = client.get("/").text
+    assert "No signals waiting" in html
+    assert "pill quiet" in html
 
 
 def test_the_page_is_self_contained(client):
