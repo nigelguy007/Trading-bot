@@ -438,7 +438,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-392 tests, no network calls. They cover the parts where being wrong costs
+394 tests, no network calls. They cover the parts where being wrong costs
 money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
 approval gate (including that alert mode really does order nothing and that a
 double-tap can't double-order), journal R-multiples, backtest lookahead guards,

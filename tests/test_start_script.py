@@ -164,3 +164,72 @@ def test_the_override_gets_a_free_port_not_the_occupied_one(script):
 def test_running_out_of_ports_fails_loudly(script):
     assert "none-free" in script
     assert "are all in use" in script
+
+
+# ---------------------------------------------------------------------- #
+# macOS bash 3.2 compatibility
+# ---------------------------------------------------------------------- #
+# Apple froze bash at 3.2 in 2007 over the GPL3 licence change, so every
+# Mac runs a shell from before most of bash's modern syntax existed. The
+# container that builds this runs bash 5, which is why `bash -n`, the test
+# suite and three live launches all passed while the script was unusable
+# on the user's machine.
+#
+# These two checks are static and always run. If a real bash 3.2 happens to
+# be on PATH the last test parses against it for real.
+
+BASH4_ONLY = [
+    (r"\$\{[A-Za-z_][A-Za-z0-9_]*\^\^", "${VAR^^} uppercase expansion"),
+    (r"\$\{[A-Za-z_][A-Za-z0-9_]*,,", "${VAR,,} lowercase expansion"),
+    (r"\bdeclare\s+-A\b", "associative arrays"),
+    (r"\bmapfile\b", "mapfile"),
+    (r"\breadarray\b", "readarray"),
+    (r"&>>", "&>> append redirection"),
+    (r"\|&", "|& pipe-stderr shorthand"),
+    (r"\bcoproc\b", "coproc"),
+]
+
+
+def test_no_bash_4_only_syntax(script):
+    """Every Mac runs bash 3.2. None of this exists there."""
+    code = "\n".join(
+        line for line in script.splitlines() if not line.lstrip().startswith("#")
+    )
+    found = [name for pattern, name in BASH4_ONLY if re.search(pattern, code)]
+    assert not found, f"bash 4+ only syntax, which macOS cannot run: {found}"
+
+
+def test_it_parses_under_a_real_bash_3_2_when_one_is_available():
+    """
+    The definitive check, skipped when no bash 3.2 is installed.
+
+    Build one with:
+        curl -O https://ftp.gnu.org/gnu/bash/bash-3.2.tar.gz
+        tar xzf bash-3.2.tar.gz && cd bash-3.2
+        ./configure --without-bash-malloc && make
+    """
+    import shutil
+
+    candidates = [
+        shutil.which("bash-3.2"),
+        shutil.which("bash32"),
+        "/tmp/b32/bash-3.2/bash",
+        "/bin/bash",
+    ]
+    for candidate in candidates:
+        if not candidate or not Path(candidate).exists():
+            continue
+        version = subprocess.run(
+            [candidate, "--version"], capture_output=True, text=True
+        ).stdout
+        if "version 3.2" not in version:
+            continue
+        result = subprocess.run(
+            [candidate, "-n", str(START_SH)], capture_output=True, text=True
+        )
+        assert result.returncode == 0, (
+            f"start.sh does not parse under bash 3.2, which is what every Mac "
+            f"runs:\n{result.stderr}"
+        )
+        return
+    pytest.skip("no bash 3.2 available; the static checks above still ran")

@@ -73,3 +73,37 @@ the whole setup in front of you before approving a trade on a phone.
 Verified at 1440, 768 and 390px: no horizontal overflow, no console errors,
 Approve and Deny fully on screen at every width. `tests/test_api_smoke.py`
 pins the parts that silently regress.
+
+---
+
+## A note on the launcher
+
+`start.sh` must parse under **bash 3.2**. Apple froze bash there in 2007
+over the GPL3 licence change, so every Mac runs a shell older than most of
+bash's modern syntax — while CI and most Linux boxes run bash 5.
+
+That difference has already cost one broken release. A heredoc inside a
+`$(...)` command substitution parses fine in bash 5; bash 3.2 scans the
+substitution for its closing paren with the ordinary quote lexer and does
+not know the heredoc body is literal, so one apostrophe in an embedded
+Python comment made the whole script unparseable. `bash -n`, the full test
+suite and three live launches all passed before it shipped.
+
+Two rules, both enforced by `tests/test_start_script.py`:
+
+1. **No heredoc inside `$(...)`.** Put embedded interpreters in files —
+   `scripts/pick_port.py` is the precedent. They are testable there too.
+2. **No bash 4+ syntax**: `${VAR^^}`, `${VAR,,}`, `declare -A`, `mapfile`,
+   `readarray`, `&>>`, `|&`, `coproc`.
+
+To check against the real thing:
+
+```
+curl -O https://ftp.gnu.org/gnu/bash/bash-3.2.tar.gz
+tar xzf bash-3.2.tar.gz && cd bash-3.2
+./configure --without-bash-malloc && make
+./bash -n ../start.sh
+```
+
+The test suite picks that binary up automatically from `/tmp/b32/bash-3.2/bash`
+or a `bash-3.2` on PATH, and skips when neither exists.
