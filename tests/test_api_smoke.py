@@ -167,3 +167,75 @@ def test_a_broker_that_raises_falls_back_to_the_clock(tmp_path):
     context.broker.is_market_open = boom  # type: ignore[method-assign]
     assert market_is_open(context) in (True, False)  # falls back, does not raise
     context.close()
+
+
+# ---------------------------------------------------------------------- #
+# The redesigned dashboard
+# ---------------------------------------------------------------------- #
+def test_health_carries_the_limits_the_dashboard_shows_figures_against(client):
+    """
+    "-0.8%" means nothing on its own. The panel renders "-0.8% of -3%", so
+    the limits have to come down with the rest of the health payload.
+    """
+    body = client.get("/api/health").json()
+    for key in (
+        "risk_per_trade_pct", "daily_loss_limit_pct", "max_drawdown_pct",
+        "max_portfolio_risk_pct", "max_open_positions",
+    ):
+        assert key in body, f"/api/health is missing {key}"
+    assert body["daily_loss_limit_pct"] == 3.0
+
+
+def test_the_equity_endpoint_serves_the_curve(client):
+    body = client.get("/api/equity").json()
+    assert "points" in body
+    assert isinstance(body["points"], list)
+
+
+def test_the_equity_endpoint_shapes_each_point_for_the_chart(client, tmp_path):
+    client.get("/api/portfolio")  # records one reading
+    points = client.get("/api/equity").json()["points"]
+    assert points, "a portfolio read should have recorded an equity point"
+    for key in ("ts", "equity", "exposure"):
+        assert key in points[0]
+
+
+def test_the_dashboard_has_the_elements_the_redesign_writes_into(client):
+    html = client.get("/").text
+    for element in (
+        "hero-equity", "hero-day", "hero-risk", "equity-chart", "kpis",
+        "chips", "venues-wrap",
+    ):
+        assert f'id="{element}"' in html, f"the page is missing #{element}"
+
+
+def test_the_page_is_self_contained(client):
+    """
+    No external script or stylesheet. This runs on localhost and must draw
+    its own charts; a CDN would make the page need the internet.
+    """
+    html = client.get("/").text
+    assert "<script src=" not in html
+    assert "cdn." not in html
+    assert "<link rel=\"stylesheet\"" not in html
+
+
+def test_the_venue_table_is_hidden_until_there_are_two(client):
+    """Hiding only the heading used to leave an empty box under Positions."""
+    html = client.get("/").text
+    assert 'id="venues-wrap" hidden' in html
+    # And an author display rule must not override the hidden attribute.
+    assert "[hidden] { display:none !important; }" in html
+
+
+def test_approve_and_deny_survive_on_a_phone(client):
+    """
+    Approving from a phone is the entire point of alert mode. The pending
+    rows become cards under the phone breakpoint so the buttons are not
+    stranded inside a sideways-scrolling table.
+    """
+    html = client.get("/").text
+    assert "#pending tr { display:block;" in html
+    assert "#pending button { display:block; width:100%;" in html
+    # The "nothing yet" row must not be hidden along with the header row.
+    assert "#pending tr:first-child:not(:last-child) { display:none; }" in html

@@ -32,12 +32,16 @@
       "tests/test_ig_broker.py",
       "tests/test_broker_routing.py"
     ],
+    "src/journal.py": ["tests/test_journal.py", "tests/test_combined_portfolio.py"],
+    "src/models.py": ["tests/test_sizing.py", "tests/test_combined_portfolio.py"],
+    "src/execution.py": ["tests/test_execution.py", "tests/test_ig_execution.py"],
+    "src/risk.py": ["tests/test_risk.py", "tests/test_combined_portfolio.py"],
+    "src/data/market_data.py": ["tests/test_ig_market_data.py"],
+    "src/alerts/formatter.py": ["tests/test_ig_sizing.py"],
+    "src/alerts/router.py": ["tests/test_execution.py"],
+    "src/cli.py": ["tests/test_doctor.py"],
     "tests/fixtures/t212-openapi.json": ["tests/test_t212_spec.py"],
-    "src/cli.py": [],
-    ".env.example": ["tests/test_placeholders.py"]
+    ".env.example": ["tests/test_placeholders.py", "tests/test_doctor.py"]
   },
-  "notes": {
-    "src/cli.py": "Argument parsing and the doctor report. Exercised by hand across broker configurations; no automated lane. Declared empty rather than mapped to an unrelated test that would pass whatever cli.py did.",
-    "tests/fixtures/t212-openapi.json": "Trading 212's published OpenAPI document, vendored so the conformance test runs offline. Refresh with: curl -o tests/fixtures/t212-openapi.json https://docs.trading212.com/_bundle/api.json"
-  }
+  "empty_lanes": ["docs/**", "*.md"]
 }

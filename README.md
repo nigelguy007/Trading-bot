@@ -59,7 +59,7 @@ talks straight to your money — the risk rules are the gate.**
 | Journal | `src/journal.py` | SQLite record of signals, orders, trades, equity |
 | Metrics | `src/metrics.py` | Win rate, avg R, expectancy, profit factor, max DD |
 | Backtester | `src/backtest.py` | Replays the rules, with lookahead guards |
-| Dashboard | `src/webhook_server.py` | Live P&L, positions, approve/deny, TradingView hook |
+| Dashboard | `src/webhook_server.py` | Live P&L, equity curve, positions, approve/deny, TradingView hook. Design notes: [docs/dashboard-design.md](docs/dashboard-design.md) |
 | Scheduler | `src/scheduler.py` | The 15-minute loop and the daily report |
 
 ---
@@ -434,7 +434,7 @@ pip install pytest
 python -m pytest tests/ -q
 ```
 
-334 tests, no network calls. They cover the parts where being wrong costs
+358 tests, no network calls. They cover the parts where being wrong costs
 money: sizing arithmetic (shares and spread-bet stakes), every risk rule, the
 approval gate (including that alert mode really does order nothing and that a
 double-tap can't double-order), journal R-multiples, backtest lookahead guards,

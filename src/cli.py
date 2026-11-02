@@ -205,7 +205,26 @@ def _check_brokers(settings: Settings, ok: list, warn: list, bad: list) -> None:
                 warn.append("no Alpaca keys — the bot will use the simulator and CSV data")
 
         elif venue == "simulated":
-            warn.append("no broker keys — the bot will use the local simulator and CSV data")
+            # Say WHY. Placeholder keys look set to a human and count as
+            # absent to the bot, so "no broker keys" on an .env that visibly
+            # has keys in it reads as a bug in the bot rather than a to-do.
+            if is_placeholder(settings.alpaca_api_key) or is_placeholder(
+                settings.alpaca_secret_key
+            ):
+                warn.append(
+                    "ALPACA keys are still template placeholders — treated as absent, "
+                    "so the bot uses the local simulator and CSV prices. Paste real "
+                    "PAPER keys to trade against Alpaca."
+                )
+            elif is_placeholder(settings.ig_api_key) or is_placeholder(settings.t212_api_key):
+                warn.append(
+                    "broker keys are still template placeholders — treated as absent, "
+                    "so the bot uses the local simulator and CSV prices."
+                )
+            else:
+                warn.append(
+                    "no broker keys — the bot will use the local simulator and CSV data"
+                )
 
 
 def _check_apis(settings: Settings, ok: list, warn: list, bad: list) -> None:
