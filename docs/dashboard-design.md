@@ -121,3 +121,50 @@ tar xzf bash-3.2.tar.gz && cd bash-3.2
 
 The test suite picks that binary up automatically from `/tmp/b32/bash-3.2/bash`
 or a `bash-3.2` on PATH, and skips when neither exists.
+
+---
+
+## The opening page (`/`)
+
+Reverse-engineered from three references rather than recalled. The first
+attempt was built from memory of Anchor and rendered as a near-empty black
+box; everything below was read off the live pages.
+
+### Anchor — composition and motion
+`scrolltide.co/templates/anchor`. Its own brief is the spec: *"the
+composition sits low and firm in the frame rather than floating, so the page
+reads as settled rather than eager"*, for products *"where trust is the
+purchase decision"*. Frames pulled from its preview video show:
+
+| Anchor | Here |
+|---|---|
+| Crowd in motion, one figure standing still | The equity curve moves; the figures on the floor do not |
+| Two-line statement, bottom left | "The market moves. / Your limits don't." |
+| Factual paragraph + pill + ghost link, bottom right | Cash, exposure, positions, the halt threshold |
+| Two whispered marks at the outer edges | Mode/venue left, symbols/range right |
+| Dark veil, heaviest at the floor | Same, `.30 → .95` |
+| Motion *"weighted and unhurried"* | 16s backdrop drift, 2.9s curve draw, 1.1s staggered rise |
+
+Its "making it yours" note is followed literally: **slow anything you
+change**, and **a specific number always beats a strong adjective**. Every
+line on the page is a figure.
+
+### Tradeo — surfaces and type
+`tradeo-saas.webflow.io/home-v1`, sampled from the running page:
+
+- `#060610` · `#0b0b15` · `#11121c` · `#191928` (surface ladder)
+- `#171720` · `#252537` (strokes), `#a9a9ac` (muted)
+- **`#9968ff`** accent — the earlier `#af60ff` was a guess
+- `#1fc16b` / `#ff2b2b` for money moving
+- Headline at weight **500**, letter-spacing **-0.05em**. Inter; no webfont
+  is loaded, so the stack falls to SF Pro on macOS.
+
+### Alpha Ledger — the data voice
+Dribbble shot 25375649 (served as mp4; frames extracted with ffmpeg).
+Tiny uppercase letterspaced micro-labels, and big light numerals above
+small muted captions in a row — the `.stats` strip along the floor,
+carrying equity, today's move and open risk.
+
+### Verified
+One viewport at 1440×900 and 390×844, no scroll at either; the round trip
+`/` → `/desk` → `/` works; motion honours `prefers-reduced-motion`.

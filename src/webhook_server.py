@@ -373,10 +373,32 @@ LANDING_HTML = """<!doctype html>
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Trading desk</title>
 <style>
-  /* The opening frame, after Anchor. One screen, nothing to scroll, every
-     element pinned to the floor so the page reads as settled rather than
-     eager. The backdrop is the account's own equity curve: a tool should
-     be textured by its own data, not by a stock photograph. */
+  /* ------------------------------------------------------------------
+     The opening page: Anchor's composition, in Tradeo's dark surfaces,
+     carrying Alpha Ledger's numerals.
+
+     ANCHOR (scrolltide.co/templates/anchor) gives the bones. Its own
+     description is the brief: "the composition sits low and firm in the
+     frame rather than floating, so the page reads as settled rather than
+     eager", for products "where trust is the purchase decision". Its
+     hero is a crowd in motion with one figure standing still, a two-line
+     statement bottom-left, a factual paragraph and a pill bottom-right,
+     and two whispered marks at the outer edges. Motion is "weighted and
+     unhurried" — and that is the half I missed the first time, so the
+     page came out as a static black box.
+
+     The crowd becomes the equity curve: the market moves all day, the
+     figure in the foreground does not. Same argument, our own data.
+
+     TRADEO (tradeo-saas.webflow.io) gives the surface ladder and the
+     type, read off the running page rather than remembered: #060610
+     through #191928, strokes #171720 and #252537, muted #a9a9ac, accent
+     #9968FF, and a headline at weight 500 with -0.07em tracking.
+
+     ALPHA LEDGER (dribbble 25375649) gives the data voice: tiny
+     uppercase letterspaced micro-labels, and big light numerals with
+     small muted captions in a row along the floor.
+     ------------------------------------------------------------------ */
   :root {
     color-scheme: dark;
     --bg:        #060610;
@@ -384,20 +406,27 @@ LANDING_HTML = """<!doctype html>
     --surface-2: #11121c;
     --stroke-1:  #171720;
     --stroke-2:  #252537;
-    --accent:    #af60ff;
-    --accent-dim:#5d6294;
+    --accent:    #9968ff;
+    --accent-dim:#7d79e7;
     --text:      #ffffff;
     --muted:     #a9a9ac;
-    --pos:       #46d19e;
-    --neg:       #ff6b6b;
-    --radius:    14px;
+    --pos:       #1fc16b;
+    --neg:       #ff2b2b;
+    /* Anchor's whole signature. Nothing here is allowed to be snappy:
+       the weight of the motion is what signals dependability. */
+    --ease:      cubic-bezier(.16, 1, .3, 1);
   }
   * { box-sizing:border-box; }
   html, body { height:100%; }
   body {
     margin:0; background:var(--bg); color:var(--text);
-    font-family:ui-sans-serif,-apple-system,BlinkMacSystemFont,"Segoe UI",Inter,sans-serif;
+    /* Tradeo sets Inter. No webfont: this page is served from localhost
+       and must not need the internet to render. SF Pro on the Mac and
+       Segoe on Windows are the closest system faces. */
+    font-family:Inter,-apple-system,"SF Pro Display",BlinkMacSystemFont,
+                "Segoe UI",Roboto,sans-serif;
     -webkit-font-smoothing:antialiased;
+    font-feature-settings:"ss01","cv01","tnum";
   }
   [hidden] { display:none !important; }
 
@@ -406,111 +435,167 @@ LANDING_HTML = """<!doctype html>
     min-height:100vh; min-height:100dvh;
     display:flex; flex-direction:column;
     background:
-      radial-gradient(120% 90% at 50% 0%, #11121c 0%, var(--surface-1) 55%, #07070f 100%);
+      radial-gradient(130% 95% at 50% 0%, #10111b 0%, var(--surface-1) 52%, #05050c 100%);
   }
-  .stage-bg { position:absolute; inset:0; opacity:.66; }
+
+  /* The backdrop drifts in slowly and never stops being the floor the
+     figures stand on. 16s, because Anchor's reads as geology. */
+  .stage-bg {
+    position:absolute; inset:0; opacity:.7;
+    transform:scale(1.06); transform-origin:50% 42%;
+    animation:settle 16s var(--ease) forwards;
+  }
   .stage-bg svg { width:100%; height:100%; display:block; }
+  @keyframes settle { to { transform:scale(1); } }
+
+  /* Heaviest at the floor, so the numerals read straight off the curve
+     without a panel behind them. Anchor does the same over its photo. */
   .stage-veil {
     position:absolute; inset:0; pointer-events:none;
     background:linear-gradient(to bottom,
-      rgba(6,6,16,.20) 0%, rgba(6,6,16,.50) 45%, rgba(6,6,16,.94) 100%);
+      rgba(6,6,16,.30) 0%, rgba(6,6,16,.52) 42%, rgba(6,6,16,.95) 100%);
   }
   .stage-note {
-    position:absolute; z-index:1; left:0; right:0; top:42%;
+    position:absolute; z-index:2; left:0; right:0; top:40%;
     transform:translateY(-50%); text-align:center; padding:0 28px;
     color:var(--accent-dim); font-size:13px; pointer-events:none;
   }
 
-  /* Top rail: who this is and what mode it is in. Nothing clickable up
-     here — the only action on this page is the one at the bottom. */
+  /* --- Top rail ---------------------------------------------------- */
   .top {
-    position:relative; z-index:1; display:flex; align-items:center;
-    justify-content:space-between; gap:16px; padding:26px 34px 0;
+    position:relative; z-index:2; display:flex; align-items:center;
+    justify-content:space-between; gap:16px; padding:24px 40px 0;
   }
-  .brand { display:flex; align-items:center; gap:11px; font-size:14px;
-           letter-spacing:.01em; }
+  .brand { display:flex; align-items:center; gap:10px; font-size:14.5px;
+           font-weight:500; letter-spacing:-.01em; }
   .brand .mark {
-    width:30px; height:30px; border-radius:9px; display:grid; place-items:center;
-    background:var(--accent); color:#120a1e; font-size:13px;
+    width:22px; height:22px; border-radius:50%; display:grid;
+    place-items:center; border:1.5px solid var(--accent);
   }
-  .flags { display:flex; align-items:center; gap:9px; flex-wrap:wrap;
+  .brand .mark i {
+    width:7px; height:7px; border-radius:50%; background:var(--accent);
+    display:block;
+  }
+  .flags { display:flex; align-items:center; gap:8px; flex-wrap:wrap;
            justify-content:flex-end; }
-  .badge { padding:5px 11px; border-radius:999px; font-size:11px;
-           letter-spacing:.06em; white-space:nowrap; }
-  .paper { background:#af60ff1f; color:var(--accent); border:1px solid #af60ff44; }
-  .live  { background:#ff6b6b1f; color:var(--neg); border:1px solid #ff6b6b55; }
-  .chip  { padding:5px 11px; border-radius:999px; font-size:12px;
+  .badge { padding:5px 11px; border-radius:999px; font-size:10.5px;
+           letter-spacing:.09em; white-space:nowrap; }
+  .paper { background:#9968ff1c; color:var(--accent); border:1px solid #9968ff40; }
+  .live  { background:#ff2b2b1c; color:var(--neg); border:1px solid #ff2b2b55; }
+  .chip  { padding:5px 11px; border-radius:999px; font-size:11.5px;
            background:var(--surface-2); border:1px solid var(--stroke-2);
            color:var(--muted); white-space:nowrap; }
   .chip b { color:var(--text); font-weight:500; }
 
+  /* --- Anchor's edge marks ----------------------------------------- */
+  /* Two whispers at the outer edges, level with each other, well above
+     the floor. In Anchor they read "Everyone's moving." and "Only some
+     arrive." — the thesis, said quietly, twice. */
   .marks {
-    position:relative; z-index:1; display:flex; justify-content:space-between;
-    gap:14px; padding:24px 34px 0; font-size:11px; letter-spacing:.1em;
-    text-transform:uppercase; color:var(--muted);
+    position:absolute; z-index:2; top:30%; left:0; right:0;
+    display:flex; justify-content:space-between; gap:20px;
+    padding:0 40px; pointer-events:none;
+    font-size:10.5px; letter-spacing:.13em; text-transform:uppercase;
+    color:#ffffff6e;
   }
   .marks span { min-width:0; white-space:nowrap; overflow:hidden;
                 text-overflow:ellipsis; }
   .marks span:last-child { text-align:right; }
 
-  /* The floor. margin-top:auto is the whole composition: whatever the
-     viewport height, the figures sit on the bottom edge. */
-  .floor {
-    position:relative; z-index:1; margin-top:auto;
-    display:flex; align-items:flex-end; justify-content:space-between;
-    gap:34px; padding:0 34px 34px;
-  }
-  .lead { min-width:0; }
-  .lead .label { font-size:11px; letter-spacing:.14em; text-transform:uppercase;
-                 color:var(--muted); }
-  .lead .figure {
-    font-size:clamp(46px, 8.5vw, 92px); line-height:1.0; font-weight:600;
-    letter-spacing:-.038em; margin-top:10px;
-  }
-  .lead .figure.sm { font-size:clamp(17px, 2.2vw, 24px); font-weight:500;
-                     margin-top:10px; letter-spacing:-.01em; }
-  .pos { color:var(--pos); } .neg { color:var(--neg); }
+  /* --- The floor ---------------------------------------------------- */
+  /* margin-top:auto is the composition. Whatever the viewport height,
+     everything is pinned to the bottom edge. */
+  .floor { position:relative; z-index:2; margin-top:auto; padding:0 40px 34px; }
 
-  .aside { max-width:430px; }
-  .copy { color:var(--muted); font-size:14px; line-height:1.55; margin:0 0 20px; }
-  .cta { display:flex; gap:12px; align-items:center; justify-content:flex-end;
+  .floor-main {
+    display:flex; align-items:flex-end; justify-content:space-between;
+    gap:40px; margin-bottom:30px;
+  }
+
+  /* Anchor's two-line statement, in Tradeo's type: weight 500, very
+     tight tracking, lines close together. */
+  .claim {
+    margin:0; font-size:clamp(31px, 4.3vw, 58px); font-weight:500;
+    line-height:1.06; letter-spacing:-.05em; max-width:18ch;
+  }
+  .claim span { display:block; opacity:0; transform:translateY(16px);
+                animation:rise 1.1s var(--ease) forwards; }
+  .claim span:nth-child(1) { animation-delay:.10s; }
+  .claim span:nth-child(2) { animation-delay:.24s; }
+  @keyframes rise { to { opacity:1; transform:none; } }
+
+  .aside { max-width:380px; opacity:0; transform:translateY(16px);
+           animation:rise 1.1s var(--ease) .40s forwards; }
+  .copy { color:var(--muted); font-size:13.5px; line-height:1.6; margin:0 0 20px; }
+  .cta { display:flex; gap:14px; align-items:center; justify-content:flex-end;
          flex-wrap:wrap; }
   .enter {
     display:inline-flex; align-items:center; gap:9px; text-decoration:none;
-    background:var(--accent); color:#140a22; font-size:14.5px; font-weight:600;
-    padding:14px 24px; border-radius:999px; letter-spacing:-.005em;
-    transition:transform .14s ease, filter .14s ease;
+    background:var(--accent); color:#0c0618; font-size:14px; font-weight:600;
+    padding:14px 24px; border-radius:999px; letter-spacing:-.01em;
+    transition:filter .45s var(--ease), transform .45s var(--ease);
   }
-  .enter:hover { filter:brightness(1.08); transform:translateY(-1px); }
+  .enter:hover { filter:brightness(1.1); transform:translateY(-2px); }
   .enter:focus-visible { outline:2px solid #fff; outline-offset:3px; }
   .ghost {
-    text-decoration:none; color:var(--muted); font-size:14px;
-    padding:13px 4px; border-bottom:1px solid transparent;
+    text-decoration:none; color:var(--muted); font-size:13.5px;
+    border-bottom:1px solid transparent; padding-bottom:2px;
+    transition:color .45s var(--ease), border-color .45s var(--ease);
   }
   .ghost:hover { color:var(--text); border-bottom-color:var(--stroke-2); }
-  .hint { color:var(--accent-dim); font-size:11.5px; margin:14px 0 0;
-          text-align:right; }
+
+  /* --- Alpha Ledger's stat row -------------------------------------- */
+  /* Big light numerals, small muted captions, a hairline above. The
+     live account stated as three facts — Anchor's brief says a specific
+     number always beats a strong adjective for this audience. */
+  .stats {
+    display:flex; gap:56px; flex-wrap:wrap;
+    border-top:1px solid var(--stroke-2); padding-top:20px;
+  }
+  .stat { opacity:0; transform:translateY(14px);
+          animation:rise 1.1s var(--ease) forwards; min-width:0; }
+  .stat:nth-child(1) { animation-delay:.54s; }
+  .stat:nth-child(2) { animation-delay:.64s; }
+  .stat:nth-child(3) { animation-delay:.74s; }
+  .stat .cap {
+    font-size:10px; letter-spacing:.15em; text-transform:uppercase;
+    color:var(--muted); margin-bottom:9px;
+  }
+  .stat .num {
+    font-size:clamp(23px, 2.9vw, 36px); font-weight:500;
+    letter-spacing:-.04em; line-height:1; white-space:nowrap;
+  }
+  .pos { color:var(--pos); } .neg { color:var(--neg); }
+
+  .hint { color:#ffffff40; font-size:11px; margin:22px 0 0; letter-spacing:.02em; }
   .hint kbd {
-    font-family:ui-monospace,Menlo,monospace; font-size:11px;
+    font-family:ui-monospace,Menlo,monospace; font-size:10.5px;
     background:var(--surface-2); border:1px solid var(--stroke-2);
     border-radius:5px; padding:2px 6px; color:var(--muted);
   }
 
-  @media (max-width: 760px) {
-    .top { padding:18px 18px 0; flex-direction:column; align-items:flex-start; }
+  @media (max-width: 860px) {
+    .top { padding:18px 20px 0; flex-direction:column; align-items:flex-start;
+           gap:12px; }
     .flags { justify-content:flex-start; }
-    .marks { padding:18px 18px 0; font-size:10px; }
-    .floor { flex-direction:column; align-items:stretch; gap:22px;
-             padding:0 18px 24px; }
+    .marks { top:auto; bottom:auto; display:none; }
+    .floor { padding:0 20px 26px; }
+    .floor-main { flex-direction:column; align-items:stretch; gap:26px;
+                  margin-bottom:24px; }
+    .claim { max-width:none; }
     .aside { max-width:none; }
-    /* Side by side, the button's label wrapped to two lines and left the
-       pill lopsided against the link. Stack them and let the button own
-       the full width — it is the only thing to do on this screen. */
-    .cta { flex-direction:column; align-items:stretch; gap:6px; }
+    .cta { flex-direction:column; align-items:stretch; gap:8px; }
     .enter { justify-content:center; white-space:nowrap; padding:16px 20px; }
     .ghost { text-align:center; padding:12px 4px; }
-    /* No keyboard to press Enter on. */
+    .stats { gap:26px 34px; }
     .hint { display:none; }
+  }
+
+  /* Anchor's motion is the point, but it is not worth making anyone ill. */
+  @media (prefers-reduced-motion: reduce) {
+    .stage-bg { animation:none; transform:none; }
+    .claim span, .aside, .stat { animation:none; opacity:1; transform:none; }
+    .enter, .ghost { transition:none; }
   }
 </style>
 </head>
@@ -522,7 +607,7 @@ LANDING_HTML = """<!doctype html>
   <p class="stage-note" id="note" hidden></p>
 
   <div class="top">
-    <div class="brand"><span class="mark">&#9650;</span> <span>Trading desk</span></div>
+    <div class="brand"><span class="mark"><i></i></span> <span>Trading desk</span></div>
     <div class="flags" id="flags"></div>
   </div>
 
@@ -532,19 +617,24 @@ LANDING_HTML = """<!doctype html>
   </div>
 
   <div class="floor">
-    <div class="lead">
-      <div class="label">Equity</div>
-      <div class="figure" id="equity">&mdash;</div>
-      <div class="figure sm" id="day">&nbsp;</div>
-    </div>
-    <div class="aside">
-      <p class="copy" id="copy">Reading the account&hellip;</p>
-      <div class="cta">
-        <a class="enter" href="/desk" id="enter">Enter the trading desk <span>&rarr;</span></a>
-        <a class="ghost" href="/desk#approvals">Pending approvals</a>
+    <div class="floor-main">
+      <h1 class="claim"><span>The market moves.</span><span>Your limits don&rsquo;t.</span></h1>
+      <div class="aside">
+        <p class="copy" id="copy">Reading the account&hellip;</p>
+        <div class="cta">
+          <a class="enter" href="/desk" id="enter">Enter the trading desk <span>&rarr;</span></a>
+          <a class="ghost" href="/desk#approvals">Pending approvals</a>
+        </div>
       </div>
-      <p class="hint">Press <kbd>Enter</kbd> to continue</p>
     </div>
+
+    <div class="stats">
+      <div class="stat"><div class="cap">Equity</div><div class="num" id="equity">&mdash;</div></div>
+      <div class="stat"><div class="cap">Today</div><div class="num" id="day">&mdash;</div></div>
+      <div class="stat"><div class="cap">Open risk</div><div class="num" id="risk">&mdash;</div></div>
+    </div>
+
+    <p class="hint">Press <kbd>Enter</kbd> to continue</p>
   </div>
 </main>
 
@@ -556,25 +646,25 @@ const pct = n => (n >= 0 ? "+" : "") + n.toFixed(2) + "%";
 const esc = s => String(s ?? "").replace(/[&<>"]/g,
   c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
 
-// The curve, drawn into the upper frame so the floor stays clear for the
-// figures. Inline SVG on purpose: this page is served from localhost and
-// must not need the internet to draw a line.
+// The curve is Anchor's crowd: the thing that moves, behind the figure
+// that does not. Inline SVG on purpose — this page is served from
+// localhost and must not need the internet to draw a line.
 function curve(points) {
   const host = document.getElementById("equity-chart");
   const note = document.getElementById("note");
-  const W = 1000, H = 1000, TOP = 120, BOT = H * 0.60;
+  const W = 1000, H = 1000, TOP = 150, BOT = H * 0.58;
 
-  // Fewer than two readings is not a curve. An empty backdrop here would
-  // make the opening screen look like a page that failed to load, so draw
-  // the baseline the account is sitting on — dashed and neutral, because a
-  // green line across a new account implies a rise that has not happened.
+  // Fewer than two readings is not a curve. An empty backdrop made the
+  // whole screen look like a page that had failed to load, so draw the
+  // baseline the account is sitting on — dashed and neutral, because a
+  // green line across a new account implies a rise that never happened.
   if (points.length < 2) {
     const MID = (TOP + BOT) / 2;
     host.innerHTML = `
       <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
            aria-label="No equity history recorded yet">
         <line x1="0" y1="${MID}" x2="${W}" y2="${MID}" stroke="var(--accent-dim)"
-              stroke-width="1.5" stroke-dasharray="2 9" opacity=".85"
+              stroke-width="1.5" stroke-dasharray="2 9" opacity=".8"
               vector-effect="non-scaling-stroke"/>
       </svg>`;
     if (note) {
@@ -601,13 +691,33 @@ function curve(points) {
     <svg viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
          aria-label="Equity over the last ${points.length} readings">
       <defs><linearGradient id="f" x1="0" y1="0" x2="0" y2="1">
-        <stop offset="0%" stop-color="${stroke}" stop-opacity=".26"/>
+        <stop offset="0%" stop-color="${stroke}" stop-opacity=".13"/>
         <stop offset="100%" stop-color="${stroke}" stop-opacity="0"/>
       </linearGradient></defs>
-      <path d="${line}L${x(points.length-1).toFixed(1)},${H}L0,${H}Z" fill="url(#f)"/>
-      <path d="${line}" fill="none" stroke="${stroke}" stroke-width="2.2"
+      <path id="eqfill" d="${line}L${x(points.length-1).toFixed(1)},${H}L0,${H}Z"
+            fill="url(#f)" opacity="0"/>
+      <path id="eqline" d="${line}" fill="none" stroke="${stroke}" stroke-width="2.2"
             vector-effect="non-scaling-stroke" stroke-linejoin="round"/>
     </svg>`;
+
+  // Draw the line on rather than snapping it in. Slow on purpose: this
+  // is the one piece of Anchor that cannot be faked with a gradient.
+  const path = document.getElementById("eqline");
+  const fill = document.getElementById("eqfill");
+  const reduce = matchMedia("(prefers-reduced-motion: reduce)").matches;
+  if (path && !reduce) {
+    const len = path.getTotalLength();
+    path.style.strokeDasharray = len;
+    path.style.strokeDashoffset = len;
+    path.style.transition = "stroke-dashoffset 2.9s cubic-bezier(.16,1,.3,1)";
+    fill.style.transition = "opacity 1.6s cubic-bezier(.16,1,.3,1) .9s";
+    requestAnimationFrame(() => {
+      path.style.strokeDashoffset = "0";
+      fill.style.opacity = "1";
+    });
+  } else if (fill) {
+    fill.style.opacity = "1";
+  }
 
   const m = document.getElementById("mark-right");
   if (m) m.textContent += flat ? ` · flat at ${money(hi)}`
@@ -615,7 +725,7 @@ function curve(points) {
 }
 
 async function load() {
-  // The page must open even when the broker is unreachable: the button
+  // The page must open even when the broker is unreachable: the way
   // through to the desk is the point, and it is already in the markup.
   try {
     const [health, pf, eq] = await Promise.all(
@@ -631,25 +741,29 @@ async function load() {
       `<span class="chip">Venue <b>${esc(health.broker)}</b></span>` +
       `<span class="chip">build ${esc(health.build || "unknown")}</span>`;
 
+    // Alpha Ledger's stat row, carrying the live account.
     document.getElementById("equity").textContent = money(pf.equity);
 
     const day = document.getElementById("day");
-    day.textContent = `${pct(pf.day_pnl_pct)}  ${money(pf.day_pnl)} today`;
-    day.className = "figure sm " +
+    day.textContent = `${pct(pf.day_pnl_pct)}  ${money(pf.day_pnl)}`;
+    day.className = "num " +
       (pf.day_pnl_pct > 0 ? "pos" : pf.day_pnl_pct < 0 ? "neg" : "");
 
+    document.getElementById("risk").textContent =
+      `${pf.open_risk_pct.toFixed(2)}% of ${(health.max_portfolio_risk_pct ?? 0).toFixed(1)}%`;
+
+    // Anchor's two marks: the thesis, said quietly, at the outer edges.
     document.getElementById("mark-left").textContent =
       `${health.mode === "live" ? "Live" : "Paper"} · ${health.broker} · ${health.execution_mode} mode`;
     document.getElementById("mark-right").textContent =
       `${health.symbols.length} symbols · ${(pf.venues || []).length || 1} venue(s)`;
 
-    // Every line a figure, not an adjective.
+    // Plain facts. Anchor's own guidance: a specific number will always
+    // outperform a strong adjective for this audience.
     document.getElementById("copy").textContent =
-      `${money(pf.cash)} cash, ${money(pf.exposure)} exposed ` +
-      `(${pf.exposure_pct.toFixed(1)}%). ${money(pf.open_risk)} at risk across ` +
-      `${pf.positions.length} position(s), ` +
-      `${pf.open_risk_pct.toFixed(2)}% of equity against a ` +
-      `${(health.max_portfolio_risk_pct ?? 0).toFixed(1)}% cap.`;
+      `${money(pf.cash)} in cash, ${money(pf.exposure)} exposed ` +
+      `(${pf.exposure_pct.toFixed(1)}%), across ${pf.positions.length} position(s). ` +
+      `Trading halts by itself at ${(health.daily_loss_limit_pct ?? 0).toFixed(1)}% down on the day.`;
 
     curve(eq.points || []);
   } catch (e) {
@@ -703,7 +817,7 @@ DASHBOARD_HTML = """<!doctype html>
     --stroke-1:  #171720;
     --stroke-2:  #252537;
     --stroke-3:  #2f3237;
-    --accent:    #af60ff;
+    --accent:    #9968ff;
     --accent-dim:#5d6294;
     --text:      #ffffff;
     --muted:     #a9a9ac;
@@ -729,7 +843,7 @@ DASHBOARD_HTML = """<!doctype html>
   body::before {
     content:""; position:fixed; inset:-20% 0 auto 0; height:520px; z-index:0;
     background:
-      radial-gradient(60% 100% at 22% 0%, #af60ff1f 0%, transparent 70%),
+      radial-gradient(60% 100% at 22% 0%, #9968ff1c 0%, transparent 70%),
       radial-gradient(45% 90% at 85% 10%, #5d629426 0%, transparent 70%);
     pointer-events:none;
   }
@@ -742,14 +856,14 @@ DASHBOARD_HTML = """<!doctype html>
   }
   .rail .mark {
     width:34px; height:34px; border-radius:10px; margin-bottom:14px;
-    background:linear-gradient(145deg,var(--accent),#6d3bb0);
+    background:linear-gradient(145deg,var(--accent),#5f3fc4);
     display:grid; place-items:center; font-size:15px; color:#fff;
     text-decoration:none; border:0;
   }
   /* The mark is the way back to the opening page, so it must not pick up
      the plain rail-link hover and lose its gradient. */
   .rail a.mark:hover, .rail a.mark:focus-visible {
-    background:linear-gradient(145deg,var(--accent),#6d3bb0);
+    background:linear-gradient(145deg,var(--accent),#5f3fc4);
     filter:brightness(1.12); border:0;
   }
   .rail a {
@@ -777,7 +891,7 @@ DASHBOARD_HTML = """<!doctype html>
   .chip b { color:var(--text); font-weight:500; }
   .badge { display:inline-block; padding:5px 11px; border-radius:999px;
            font-size:11px; letter-spacing:.06em; }
-  .paper { background:#af60ff1f; color:var(--accent); border:1px solid #af60ff44; }
+  .paper { background:#9968ff1c; color:var(--accent); border:1px solid #9968ff40; }
   .live  { background:#ff6b6b1f; color:var(--neg); border:1px solid #ff6b6b55; }
 
   .banner { background:#e3b3410f; border:1px solid #e3b34155; color:var(--warn);

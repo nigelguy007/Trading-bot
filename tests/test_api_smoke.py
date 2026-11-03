@@ -442,3 +442,80 @@ def test_the_pages_are_never_cached(client):
     for path in ("/", "/desk"):
         headers = client.get(path).headers
         assert "no-store" in headers.get("cache-control", ""), path
+
+
+# ---------------------------------------------------------------------- #
+# The three templates the opening page is built from
+# ---------------------------------------------------------------------- #
+# Anchor (scrolltide.co/templates/anchor) for the composition and the
+# motion, Tradeo (tradeo-saas.webflow.io) for the surfaces and type,
+# Alpha Ledger (dribbble 25375649) for the numerals. These assert the
+# values actually read off those pages, because the first attempt was
+# built from memory of Anchor and came out as a black box.
+
+
+def test_the_tradeo_palette_is_the_one_on_the_running_template(client):
+    """
+    #9968ff is Tradeo's accent, sampled from the live demo. The first
+    pass used #af60ff from memory, and the surface ladder below is the
+    one its sections actually paint.
+    """
+    html = client.get("/").text
+    assert "#9968ff" in html
+    assert "#af60ff" not in html
+    for surface in ("#060610", "#0b0b15", "#11121c", "#171720", "#252537", "#a9a9ac"):
+        assert surface in html, surface
+
+
+def test_the_headline_is_anchors_two_line_statement(client):
+    """
+    Anchor leads with a two-beat claim ("Everyone's moving." / "Few are
+    arriving."), not with a number. Each line must fit on one line, so
+    they stay short.
+    """
+    html = client.get("/").text
+    assert "The market moves." in html
+    assert "Your limits don" in html
+    # Tradeo's headline: weight 500, very tight tracking. Not bold.
+    assert "font-weight:500" in html
+    assert "letter-spacing:-.05em" in html
+
+
+def test_the_page_actually_moves(client):
+    """
+    The half I missed first time. Anchor's own brief: "Motion is weighted
+    and unhurried" and "the weight of the motion is what signals
+    dependability". A static copy of the layout is not this template.
+    """
+    html = client.get("/").text
+    assert "@keyframes settle" in html      # the slow backdrop drift
+    assert "@keyframes rise" in html        # the staggered floor entrance
+    assert "cubic-bezier(.16, 1, .3, 1)" in html
+    assert "strokeDashoffset" in html       # the curve draws itself on
+    # Unhurried means seconds, not milliseconds.
+    assert "16s" in html and "1.1s" in html
+
+
+def test_the_motion_can_be_turned_off(client):
+    html = client.get("/").text
+    assert "prefers-reduced-motion" in html
+
+
+def test_alpha_ledgers_numerals_carry_the_account(client):
+    """
+    Big light numerals with small uppercase letterspaced captions, in a
+    row along the floor — Alpha Ledger's stat row, holding real figures.
+    """
+    html = client.get("/").text
+    assert 'class="stats"' in html
+    for caption in ("Equity", "Today", "Open risk"):
+        assert f">{caption}</div>" in html
+    assert "text-transform:uppercase" in html
+    assert 'id="equity"' in html and 'id="day"' in html and 'id="risk"' in html
+
+
+def test_anchors_edge_marks_are_present(client):
+    """Two whispers at the outer edges, level with each other."""
+    html = client.get("/").text
+    assert 'class="marks"' in html
+    assert 'id="mark-left"' in html and 'id="mark-right"' in html
