@@ -320,3 +320,34 @@ def test_stop_is_shared_between_the_stop_command_and_the_restart(script):
     """Two copies of the kill logic would drift apart."""
     assert "stop_bot()" in script
     assert script.count("pkill -f 'src\\.cli serve'") == 1
+
+
+def test_a_minimal_env_does_not_kill_the_launcher(script):
+    """
+    WEBHOOK_HOST and WEBHOOK_PORT are optional and both have defaults,
+    but grep exits 1 when a key is absent and `set -euo pipefail` turned
+    that into the whole script dying — silently, status 1, no output at
+    all. Any hand-written .env without those lines hit it.
+    """
+    for key in ("WEBHOOK_PORT=", "WEBHOOK_HOST="):
+        line = [l for l in script.splitlines()
+                if f"grep -E '^{key}' .env" in l]
+        assert line, f"expected a grep for {key}"
+        assert "|| true" in line[0], (
+            f"the {key} lookup must tolerate a missing key: {line[0].strip()}"
+        )
+
+
+def test_the_launcher_survives_an_env_without_those_keys(tmp_path):
+    """Drive the real shell, since this bug was invisible to inspection."""
+    snippet = (
+        "set -euo pipefail\n"
+        "cd %s\n"
+        "WANTED=\"$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 "
+        "| tr -d '[:space:]' || true)\"\n"
+        "echo \"ok:${WANTED:-8001}\"\n" % tmp_path
+    )
+    (tmp_path / ".env").write_text("ANTHROPIC_API_KEY=x\n", encoding="utf-8")
+    out = subprocess.run(["bash", "-c", snippet], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    assert out.stdout.strip() == "ok:8001"

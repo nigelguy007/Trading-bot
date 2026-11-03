@@ -208,6 +208,33 @@ daily stop ever saw. See **[docs/multi-broker.md](docs/multi-broker.md)**.
 trailing spaces, placeholder keys, a `.env` that isn't gitignored, missing
 packages, and whether live trading is (correctly) still switched off.
 
+### Making it actually trade
+
+Opening the dashboard does **not** start the bot. Scanning costs Claude API
+calls on every cycle, and in auto mode it places orders, so it waits to be
+switched on.
+
+On the desk there is a **The bot** panel:
+
+| Control | What it does |
+|---|---|
+| **Start the bot** | Begins the scan loop: every `SCAN_INTERVAL_MINUTES`, during market hours, it reconciles broker state then analyses the watchlist |
+| **Pause the bot** | Stops scanning. Open positions and their broker-side stops are untouched |
+| **Scan once now** | A single pass, whether or not the loop is running |
+
+The panel states which of three things is true — **Working**, **Paused**, or
+**Waiting for the market to open** — because an idle account and a bot that
+was never switched on used to look identical. It also spells out what
+starting it will do: in `alert` mode every signal waits for your Approve, in
+`auto` mode it executes without asking.
+
+Set `AUTOSTART_SCANNER=true` to have it start scanning on boot, for an
+unattended host.
+
+Starting the loop changes nothing about the live-trading gates. Real money
+still needs all three of `TRADING_MODE=live`, the broker's own flag, and
+`CONFIRM_LIVE=I_UNDERSTAND_THE_RISK`.
+
 ### The opening page and the dashboard
 
 Two pages:

@@ -156,6 +156,11 @@ class Settings(BaseSettings):
 
     # --- Scheduling -------------------------------------------------------
     scan_interval_minutes: int = Field(default=15, ge=1)
+    # The scan loop inside the web server. Off by default: every cycle
+    # costs Claude API calls, and in auto mode it places orders, so
+    # switching it on is an explicit act — a button on the dashboard,
+    # or this flag for an unattended host.
+    autostart_scanner: bool = False
     daily_report_time: str = "16:15"
     market_hours_only: bool = True
 

@@ -268,9 +268,15 @@ stop_bot() {
 }
 
 choose_port() {
-    WANTED="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+    # `|| true` is load-bearing. grep exits 1 when the key is absent, and
+    # under `set -euo pipefail` that exit propagates out of the command
+    # substitution and kills the whole script — silently, with status 1
+    # and not a single line of output. Any hand-written .env that omits
+    # WEBHOOK_HOST or WEBHOOK_PORT hit it. Both keys are optional and
+    # both have defaults, so a missing one is normal, not an error.
+    WANTED="$(grep -E '^WEBHOOK_PORT=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)"
     WANTED="${WANTED:-8001}"
-    HOST="$(grep -E '^WEBHOOK_HOST=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]')"
+    HOST="$(grep -E '^WEBHOOK_HOST=' .env 2>/dev/null | cut -d= -f2 | tr -d '[:space:]' || true)"
     HOST="${HOST:-0.0.0.0}"
 
     # Another app may already own the port — 8000/8001 are popular. Binding

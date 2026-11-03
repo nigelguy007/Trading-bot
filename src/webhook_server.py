@@ -30,6 +30,7 @@ from src.app import AppContext, build_app
 from src.broker.base import BrokerError
 from src.logging_setup import get_logger
 from src.metrics import compute_metrics
+from src.runner import BackgroundScanner
 
 log = get_logger(__name__)
 
@@ -75,16 +76,37 @@ def build_id() -> str:
     return "unknown"
 
 
+_scanner: Optional["BackgroundScanner"] = None
+
+
+def get_scanner() -> "BackgroundScanner":
+    if _scanner is None:  # pragma: no cover - guarded by the lifespan
+        raise RuntimeError("scanner is not initialised")
+    return _scanner
+
+
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _ctx
+    global _ctx, _scanner
     # The dashboard is useful without a key — it shows the portfolio, the
     # journal and past signals. Only live analysis needs Claude.
     _ctx = build_app(require_llm=False)
+
+    # The scan loop now lives here rather than only in the `run` command.
+    # `./start.sh` starts `serve`, so before this the ordinary way to run
+    # the bot produced a dashboard that never analysed anything, and
+    # nothing on the page said so.
+    _scanner = BackgroundScanner(_ctx)
+    if _ctx.settings.autostart_scanner:
+        started, message = _scanner.start()
+        log.info("server.autostart", started=started, message=message)
+
     log.info("server.started", symbols=len(_ctx.settings.all_symbols))
     try:
         yield
     finally:
+        _scanner.shutdown()
+        _scanner = None
         _ctx.close()
         _ctx = None
 
@@ -331,6 +353,44 @@ async def deny(signal_id: str) -> JSONResponse:
 async def scan(background: BackgroundTasks) -> dict:
     background.add_task(_run_scan, get_context().settings.all_symbols)
     return {"status": "scanning"}
+
+
+# ====================================================================== #
+#  Starting and stopping the bot
+# ====================================================================== #
+# Before these, the only way to make the bot actually work was a second
+# command in a second terminal (`./start.sh run`). The dashboard showed an
+# idle account and gave no hint that nothing was scanning.
+@app.get("/api/bot")
+async def bot_state() -> dict:
+    return get_scanner().state()
+
+
+@app.post("/api/bot/start")
+async def bot_start() -> JSONResponse:
+    ok, message = get_scanner().start()
+    return JSONResponse(
+        {"ok": ok, "message": message, **get_scanner().state()},
+        status_code=200 if ok else 409,
+    )
+
+
+@app.post("/api/bot/stop")
+async def bot_stop() -> JSONResponse:
+    ok, message = get_scanner().stop()
+    return JSONResponse(
+        {"ok": ok, "message": message, **get_scanner().state()},
+        status_code=200 if ok else 409,
+    )
+
+
+@app.post("/api/bot/scan-now")
+async def bot_scan_now() -> JSONResponse:
+    ok, message = get_scanner().scan_now()
+    return JSONResponse(
+        {"ok": ok, "message": message, **get_scanner().state()},
+        status_code=200 if ok else 409,
+    )
 
 
 # ====================================================================== #
@@ -728,8 +788,8 @@ async function load() {
   // The page must open even when the broker is unreachable: the way
   // through to the desk is the point, and it is already in the markup.
   try {
-    const [health, pf, eq] = await Promise.all(
-      ["/api/health", "/api/portfolio", "/api/equity"]
+    const [health, pf, eq, bot] = await Promise.all(
+      ["/api/health", "/api/portfolio", "/api/equity", "/api/bot"]
         .map(u => fetch(u).then(r => r.json())));
 
     CUR = health.currency_symbol || "$";
@@ -753,8 +813,14 @@ async function load() {
       `${pf.open_risk_pct.toFixed(2)}% of ${(health.max_portfolio_risk_pct ?? 0).toFixed(1)}%`;
 
     // Anchor's two marks: the thesis, said quietly, at the outer edges.
+    // Whether it is actually scanning belongs on the opening page: an
+    // idle account and a bot that was never switched on look identical.
+    const working = bot.running
+      ? (bot.market_hours_only && !bot.market_open ? "waiting for the open" : "working")
+      : "paused";
     document.getElementById("mark-left").textContent =
-      `${health.mode === "live" ? "Live" : "Paper"} · ${health.broker} · ${health.execution_mode} mode`;
+      `${health.mode === "live" ? "Live" : "Paper"} · ${health.broker} · ` +
+      `${health.execution_mode} mode · ${working}`;
     document.getElementById("mark-right").textContent =
       `${health.symbols.length} symbols · ${(pf.venues || []).length || 1} venue(s)`;
 
@@ -874,6 +940,44 @@ DASHBOARD_HTML = """<!doctype html>
   .rail a:hover, .rail a.on { background:var(--surface-3); color:var(--text);
                               border-color:var(--stroke-2); }
   .rail .spacer { flex:1; }
+
+  /* --- The bot's on/off control -------------------------------------- */
+  .bot-row { display:flex; align-items:flex-end; justify-content:space-between;
+             gap:20px; flex-wrap:wrap; }
+  .bot-state { display:flex; align-items:center; gap:9px; font-size:20px;
+               font-weight:500; margin-top:8px; letter-spacing:-.02em; }
+  .bot-sub { color:var(--muted); font-size:12.5px; margin-top:6px; }
+  .dot { width:9px; height:9px; border-radius:50%; background:var(--muted);
+         flex:none; }
+  /* Working is the only state that gets to pulse. Paused and
+     market-closed are steady, because neither is doing anything. */
+  .dot.on   { background:var(--pos); animation:beat 2.4s ease-in-out infinite; }
+  .dot.wait { background:var(--warn); }
+  .dot.off  { background:var(--stroke-3); }
+  @keyframes beat { 0%,100% { opacity:1; } 50% { opacity:.35; } }
+  .bot-actions { display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  button.pill, .ghostbtn {
+    font:inherit; cursor:pointer; border-radius:999px;
+    transition:filter .15s, background .15s, color .15s;
+  }
+  button.pill { border:0; background:var(--accent); color:#0c0618;
+                font-size:13.5px; font-weight:600; padding:11px 20px; }
+  button.pill:hover:not(:disabled) { filter:brightness(1.1); }
+  button.pill:disabled { opacity:.5; cursor:default; }
+  button.pill.stop { background:var(--surface-3); color:var(--text);
+                     border:1px solid var(--stroke-2); }
+  .ghostbtn { background:transparent; border:1px solid var(--stroke-2);
+              color:var(--muted); font-size:13px; padding:10px 16px; }
+  .ghostbtn:hover:not(:disabled) { color:var(--text); background:var(--surface-2); }
+  .ghostbtn:disabled { opacity:.45; cursor:default; }
+  .bot-note { margin-top:14px; font-size:12.5px; color:var(--muted);
+              border-top:1px solid var(--stroke-1); padding-top:12px; }
+  .bot-note.warn { color:var(--warn); }
+  @media (max-width: 560px) {
+    .bot-row { flex-direction:column; align-items:stretch; }
+    .bot-actions { flex-direction:column; align-items:stretch; }
+    button.pill, .ghostbtn { width:100%; }
+  }
 
   .shell { margin-left:var(--rail); padding:26px 30px 60px; position:relative; z-index:1; }
 
@@ -1160,6 +1264,24 @@ DASHBOARD_HTML = """<!doctype html>
   </div>
 </section>
 
+<!-- Starting the bot used to mean a second command in a second
+     terminal. The dashboard showed an idle account and never said that
+     nothing was scanning. -->
+<section class="panel" id="bot">
+  <div class="bot-row">
+    <div class="bot-who">
+      <div class="label">The bot</div>
+      <div class="bot-state"><span class="dot" id="bot-dot"></span><b id="bot-state">checking…</b></div>
+      <div class="bot-sub" id="bot-sub">&nbsp;</div>
+    </div>
+    <div class="bot-actions">
+      <button class="pill" id="bot-toggle" disabled>…</button>
+      <button class="ghostbtn" id="bot-scan">Scan once now</button>
+    </div>
+  </div>
+  <div class="bot-note" id="bot-note" hidden></div>
+</section>
+
 <section class="panel">
   <div class="label">Risk limits</div>
   <div class="kpis" id="kpis"></div>
@@ -1295,6 +1417,95 @@ function table(el, headers, rows) {
     : `<tr><td class="empty">nothing yet</td></tr>`;
 }
 
+// --- The bot's on/off control -------------------------------------- //
+// Three states worth distinguishing, because they need different things
+// from you: working, paused, and running-but-waiting-for-the-open. The
+// old dashboard showed all three as an idle account.
+function renderBot(bot, health) {
+  const dot = document.getElementById("bot-dot");
+  const state = document.getElementById("bot-state");
+  const sub = document.getElementById("bot-sub");
+  const toggle = document.getElementById("bot-toggle");
+  const scan = document.getElementById("bot-scan");
+  const note = document.getElementById("bot-note");
+
+  const waiting = bot.running && bot.market_hours_only && !bot.market_open;
+  dot.className = "dot " + (waiting ? "wait" : bot.running ? "on" : "off");
+  state.textContent = bot.busy ? "Scanning now…"
+    : waiting ? "Waiting for the market to open"
+    : bot.running ? "Working" : "Paused";
+
+  const when = bot.next_run ? new Date(bot.next_run) : null;
+  const bits = [];
+  if (bot.running) {
+    bits.push(`every ${bot.interval_minutes} min`);
+    if (when) bits.push(`next ${when.toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"})}`);
+  } else {
+    bits.push("not scanning — nothing is being analysed");
+  }
+  if (bot.last_run) {
+    const at = new Date(bot.last_run.at).toLocaleTimeString([], {hour:"2-digit", minute:"2-digit"});
+    const r = bot.last_run;
+    // run_cycle().summary() is a sentence, not an object. Reading
+    // .scanned off it silently produced "0 scanned, 0 signal(s)" for
+    // every run, which is exactly the kind of quietly-wrong readout
+    // this panel exists to replace.
+    bits.push(r.error
+      ? `last run ${at} failed: ${r.error}`
+      : `last run ${at}: ${r.summary || "done"}`);
+  }
+  sub.textContent = bits.join(" · ");
+
+  toggle.disabled = false;
+  toggle.textContent = bot.running ? "Pause the bot" : "Start the bot";
+  toggle.className = bot.running ? "pill stop" : "pill";
+  scan.disabled = !!bot.busy;
+
+  // Say what starting it will actually do. In auto mode the next cycle
+  // can place orders without asking, which is not something to discover
+  // after the fact.
+  let text = "";
+  if (!health.llm_ready) {
+    text = "No Claude API key, so there is nothing to analyse with. " +
+           "Add one with ./start.sh setkey and restart.";
+  } else if (health.execution_mode === "auto") {
+    text = health.mode === "live"
+      ? "AUTO + LIVE MONEY: approved signals are sent to the broker as real " +
+        "orders, with no confirmation step."
+      : "Auto mode: signals are executed on the paper account without asking you.";
+  } else {
+    text = "Alert mode: every signal waits for your Approve above. " +
+           "Nothing reaches the broker on its own.";
+  }
+  note.textContent = text;
+  note.className = "bot-note" +
+    ((!health.llm_ready || (health.execution_mode === "auto" && health.mode === "live"))
+      ? " warn" : "");
+  note.hidden = false;
+}
+
+async function botPost(path) {
+  try {
+    const r = await fetch(path, { method: "POST" });
+    const body = await r.json();
+    if (!body.ok && body.message) alert(body.message);
+  } catch (e) {
+    alert("Could not reach the bot: " + e.message);
+  }
+  refresh();
+}
+
+document.addEventListener("click", e => {
+  if (e.target.id === "bot-toggle") {
+    e.target.disabled = true;
+    botPost(e.target.textContent.startsWith("Pause") ? "/api/bot/stop" : "/api/bot/start");
+  }
+  if (e.target.id === "bot-scan") {
+    e.target.disabled = true;
+    botPost("/api/bot/scan-now");
+  }
+});
+
 async function refresh() {
   try {
     const [health, pf, pend, sigs, met, eq] = await Promise.all(
@@ -1376,6 +1587,8 @@ async function refresh() {
     primary.className = waiting ? "pill" : "pill quiet";
 
     sparkline(eq.points || []);
+
+    renderBot(await fetch("/api/bot").then(r => r.json()), health);
 
     // --- Risk limits: the number AND how near the line it is ---
     const dll = health.daily_loss_limit_pct ?? 0;

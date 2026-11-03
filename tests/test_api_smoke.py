@@ -519,3 +519,91 @@ def test_anchors_edge_marks_are_present(client):
     html = client.get("/").text
     assert 'class="marks"' in html
     assert 'id="mark-left"' in html and 'id="mark-right"' in html
+
+
+# ---------------------------------------------------------------------- #
+# Switching the bot on
+# ---------------------------------------------------------------------- #
+# `./start.sh` runs `serve`, and `serve` was the dashboard alone — the
+# scan loop lived in a separate `run` command. The ordinary way to start
+# the bot therefore produced a page showing an idle account that was
+# never going to change, and nothing on it said so.
+
+
+def test_the_bot_state_is_exposed(client, keyless_scanner):
+    body = client.get("/api/bot").json()
+    for key in ("running", "interval_minutes", "execution_mode",
+                "next_run", "last_run", "market_open"):
+        assert key in body, key
+    assert body["running"] is False
+
+
+@pytest.fixture
+def keyless_scanner(client, monkeypatch):
+    """
+    A scanner over a stub context with no Claude key.
+
+    Swapped in deliberately rather than relying on the ambient .env: the
+    app's lifespan reads the real file, so without this the outcome
+    depends on whatever key happens to be on the machine — and an
+    earlier version of these tests started a REAL scan loop, against the
+    real pipeline, during the suite.
+    """
+    from tests.test_runner import make_ctx
+    from src import webhook_server as ws
+    from src.runner import BackgroundScanner
+
+    scanner = BackgroundScanner(make_ctx(has_key=False))
+    monkeypatch.setattr(ws, "_scanner", scanner)
+    yield scanner
+    scanner.shutdown()
+
+
+def test_starting_without_a_key_is_refused_with_a_reason(client, keyless_scanner):
+    """A loop with nothing to analyse with would be a lie on the page."""
+    resp = client.post("/api/bot/start")
+    assert resp.status_code == 409
+    assert "setkey" in resp.json()["message"]
+    assert client.get("/api/bot").json()["running"] is False
+    assert keyless_scanner.running is False
+
+
+def test_scan_now_without_a_key_is_refused(client, keyless_scanner):
+    resp = client.post("/api/bot/scan-now")
+    assert resp.status_code == 409
+    assert "setkey" in resp.json()["message"]
+
+
+def test_stopping_when_idle_is_not_an_error_page(client, keyless_scanner):
+    resp = client.post("/api/bot/stop")
+    assert resp.status_code == 409
+    assert resp.json()["message"] == "Not running."
+
+
+def test_the_desk_can_switch_the_bot_on(client):
+    html = client.get("/desk").text
+    assert 'id="bot-toggle"' in html
+    assert "Start the bot" in html
+    assert 'id="bot-scan"' in html
+    assert "/api/bot/start" in html and "/api/bot/stop" in html
+
+
+def test_the_desk_distinguishes_paused_from_waiting_for_the_open(client):
+    """
+    Three states that need different things from you. The old page
+    showed all three as an idle account.
+    """
+    html = client.get("/desk").text
+    assert "Waiting for the market to open" in html
+    assert "not scanning — nothing is being analysed" in html
+    assert ">Working<" in html or '"Working"' in html
+
+
+def test_the_desk_says_what_starting_it_will_do(client):
+    """
+    Auto mode places orders without asking. That is not something to
+    discover after the fact.
+    """
+    html = client.get("/desk").text
+    assert "AUTO + LIVE MONEY" in html
+    assert "Alert mode: every signal waits for your Approve" in html
