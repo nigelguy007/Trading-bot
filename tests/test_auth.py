@@ -262,3 +262,41 @@ def test_an_absolute_data_dir_is_honoured(tmp_path):
     target = tmp_path / "vol" / "data"
     assert _resolve_dir(str(target)) == target
     assert _resolve_dir("data") == REPO / "data"
+
+
+def test_the_deploy_script_runs_on_macos_bash():
+    """Every Mac ships bash 3.2, and this script is run on the user's Mac."""
+    import subprocess
+    script = REPO / "scripts" / "deploy-fly.sh"
+    assert script.exists()
+    out = subprocess.run(["bash", "-n", str(script)], capture_output=True, text=True)
+    assert out.returncode == 0, out.stderr
+    body = script.read_text(encoding="utf-8")
+    for pattern in ("${VOLUME^^}", "declare -A", "mapfile", "readarray"):
+        assert pattern not in body, f"bash 4+ only: {pattern}"
+
+
+def test_the_deploy_script_never_prints_a_secret():
+    """
+    It reads .env and pushes it to Fly. The one value it may print is a
+    dashboard password it generated itself, which the user has no other
+    way to learn.
+    """
+    body = (REPO / "scripts" / "deploy-fly.sh").read_text(encoding="utf-8")
+    assert 'cat "$STAGED"' not in body
+    assert "flyctl secrets list" not in body
+    # The staged file must be locked down and removed even on failure.
+    assert 'chmod 600 "$STAGED"' in body
+    assert "trap cleanup EXIT" in body
+
+
+def test_the_deploy_script_keeps_it_to_one_machine():
+    """Two schedulers means double scanning and duplicate orders."""
+    body = (REPO / "scripts" / "deploy-fly.sh").read_text(encoding="utf-8")
+    assert "--ha=false" in body
+
+
+def test_the_deploy_script_does_not_ship_deployment_keys_as_secrets():
+    """fly.toml sets these; a stale .env copy would silently override it."""
+    body = (REPO / "scripts" / "deploy-fly.sh").read_text(encoding="utf-8")
+    assert "DATA_DIR|LOG_DIR|WEBHOOK_HOST|WEBHOOK_PORT|AUTOSTART_SCANNER" in body

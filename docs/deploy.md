@@ -35,10 +35,29 @@ reference point. Mount a volume and point `DATA_DIR` at it.
 
 ---
 
-## Option A — Fly.io
+## Option A — Fly.io, in one command
 
-Always-on small machines, volumes, and HTTPS included. `fly.toml` is in the
-repo; change `app` and `primary_region` first.
+Run this on the machine that has your `.env`. It creates the app and the
+volume if they are missing, pushes every setting from `.env` to Fly as a
+secret, generates a dashboard password if you have not set one, deploys,
+and waits until the bot answers.
+
+```bash
+curl -L https://fly.io/install.sh | sh     # once
+export PATH="$HOME/.fly/bin:$PATH"
+flyctl auth login                          # once
+
+bash scripts/deploy-fly.sh my-desk-name
+```
+
+Your keys go straight from `.env` to Fly. The script never prints them,
+and the staged copy is `chmod 600` and deleted even if the deploy fails.
+The only value it prints is a dashboard password it generated itself —
+**save that, it is shown once.**
+
+Re-run it any time to redeploy; it is idempotent.
+
+### Or step by step
 
 ```bash
 fly launch --no-deploy --copy-config --name your-app-name
@@ -51,9 +70,13 @@ fly secrets set \
   TRADINGVIEW_WEBHOOK_SECRET=... \
   DASHBOARD_PASSWORD="$(openssl rand -base64 24)"
 
-fly deploy
+fly deploy --ha=false
 fly open
 ```
+
+`--ha=false` matters: Fly otherwise creates a spare machine, and two
+machines means two schedulers — double scanning, double the Claude bill,
+and in auto mode duplicate orders.
 
 Secrets go through `fly secrets`, never into `fly.toml` or the image —
 `.dockerignore` excludes `.env` for the same reason.
