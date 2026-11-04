@@ -38,7 +38,12 @@ def client(tmp_path, monkeypatch):
     context = build_app(settings_for(tmp_path), force_simulated=True, require_llm=False)
     monkeypatch.setattr(ws, "_ctx", context, raising=False)
     monkeypatch.setattr(ws, "get_context", lambda: context)
-    with TestClient(ws.app) as c:
+    # client=127.0.0.1 because these tests are the local case: no
+    # DASHBOARD_PASSWORD, a browser on the same machine. TestClient's
+    # default host is the literal string "testclient", which is not a
+    # loopback address and is therefore refused — correctly. The remote
+    # and password-protected cases are covered in test_auth.py.
+    with TestClient(ws.app, client=("127.0.0.1", 50000)) as c:
         yield c
     context.close()
 

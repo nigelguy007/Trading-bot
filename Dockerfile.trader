@@ -1,0 +1,59 @@
+# The trading bot, for a host that is not your laptop.
+#
+# Deliberately separate from Dockerfile.backend / Dockerfile.frontend,
+# which belong to the other project in this repo.
+#
+# Two things here are load-bearing for a trading bot specifically:
+#
+#   * DATA_DIR points at /data, a mounted volume. The trade journal is
+#     SQLite in that directory. On a container filesystem it would be
+#     wiped on every deploy and every restart, taking the journal, the
+#     equity curve and the day's starting equity with it — which is what
+#     the day-loss circuit breaker measures against.
+#
+#   * The process must stay up. The scan loop is an in-process scheduler,
+#     not a cron job, so a host that sleeps idle containers will simply
+#     stop trading. See fly.toml: auto_stop_machines is off.
+
+FROM python:3.12-slim AS base
+
+# curl is here for the container healthcheck and nothing else.
+RUN apt-get update \
+ && apt-get install -y --no-install-recommends curl ca-certificates \
+ && rm -rf /var/lib/apt/lists/*
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PIP_NO_CACHE_DIR=1
+
+WORKDIR /app
+
+# Dependencies first, so a code change does not re-resolve the world.
+COPY requirements-trader.txt ./
+RUN pip install --upgrade pip && pip install -r requirements-trader.txt
+
+COPY src/ ./src/
+COPY config/ ./config/
+COPY scripts/ ./scripts/
+
+# Run as nobody. A container that can rewrite its own code is a larger
+# blast radius than this needs.
+RUN useradd --create-home --uid 10001 trader \
+ && mkdir -p /data /data/logs \
+ && chown -R trader:trader /app /data
+USER trader
+
+ENV DATA_DIR=/data \
+    LOG_DIR=/data/logs \
+    WEBHOOK_HOST=0.0.0.0 \
+    WEBHOOK_PORT=8080
+
+EXPOSE 8080
+VOLUME ["/data"]
+
+# /api/live is the one endpoint that needs no credentials, and it says
+# nothing about the account.
+HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
+  CMD curl -fsS "http://127.0.0.1:${WEBHOOK_PORT}/api/live" || exit 1
+
+CMD ["python", "-m", "src.cli", "serve"]

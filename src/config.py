@@ -22,6 +22,22 @@ from pydantic_settings import BaseSettings, SettingsConfigDict
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 
+
+def _resolve_dir(value: str) -> Path:
+    """
+    Where the journal and the logs live.
+
+    A relative path stays under the repo, which is what a local checkout
+    wants. An ABSOLUTE path is honoured as given, which is what a cloud
+    host needs: the database has to sit on a mounted volume such as
+    /data, or every deploy silently starts the trade journal from empty.
+    """
+    p = Path(value)
+    if not p.is_absolute():
+        p = REPO_ROOT / p
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
 # The exact phrase that must appear in CONFIRM_LIVE before real orders are possible.
 LIVE_CONFIRMATION_PHRASE = "I_UNDERSTAND_THE_RISK"
 
@@ -161,6 +177,12 @@ class Settings(BaseSettings):
     # switching it on is an explicit act — a button on the dashboard,
     # or this flag for an unattended host.
     autostart_scanner: bool = False
+
+    # Who may reach the dashboard. Unset means loopback only, so a local
+    # checkout needs no password and a cloud deploy that forgot one
+    # refuses everybody rather than serving the account to the internet.
+    dashboard_user: str = "trader"
+    dashboard_password: str = ""
     daily_report_time: str = "16:15"
     market_hours_only: bool = True
 
@@ -395,15 +417,11 @@ class Settings(BaseSettings):
 
     @property
     def log_path(self) -> Path:
-        p = REPO_ROOT / self.log_dir
-        p.mkdir(parents=True, exist_ok=True)
-        return p
+        return _resolve_dir(self.log_dir)
 
     @property
     def data_path(self) -> Path:
-        p = REPO_ROOT / self.data_dir
-        p.mkdir(parents=True, exist_ok=True)
-        return p
+        return _resolve_dir(self.data_dir)
 
     @property
     def journal_db(self) -> Path:

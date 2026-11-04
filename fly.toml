@@ -1,0 +1,64 @@
+# Fly.io deployment for the trading bot.
+#
+#   fly launch --no-deploy --copy-config --name <your-app-name>
+#   fly volumes create trader_data --size 1 --region lhr
+#   fly secrets set ANTHROPIC_API_KEY=... ALPACA_API_KEY=... \
+#                   ALPACA_SECRET_KEY=... DASHBOARD_PASSWORD=...
+#   fly deploy
+#
+# Change `app` and `primary_region` before deploying. lhr is London.
+
+app = "trading-desk"
+primary_region = "lhr"
+
+[build]
+  dockerfile = "Dockerfile.trader"
+
+[env]
+  DATA_DIR = "/data"
+  LOG_DIR = "/data/logs"
+  WEBHOOK_HOST = "0.0.0.0"
+  WEBHOOK_PORT = "8080"
+  # Start scanning when the machine boots. On a host there is nobody to
+  # press the button, and a deploy or a restart would otherwise leave the
+  # bot quietly paused.
+  AUTOSTART_SCANNER = "true"
+
+# The trade journal. Without this the SQLite database is on the container
+# filesystem and every deploy starts the journal, the equity curve and the
+# day's opening equity from empty — and the day-loss circuit breaker
+# measures against that opening equity.
+[mounts]
+  source = "trader_data"
+  destination = "/data"
+
+[http_service]
+  internal_port = 8080
+  force_https = true
+  # BOTH of these matter. The scan loop is an in-process scheduler, not a
+  # cron job: a machine that stops when no HTTP request arrives simply
+  # stops trading, and a machine that has to cold-start on a request
+  # misses scans in between.
+  auto_stop_machines = false
+  auto_start_machines = true
+  min_machines_running = 1
+
+  [http_service.concurrency]
+    type = "requests"
+    hard_limit = 50
+    soft_limit = 25
+
+# One machine, always. Two would mean two schedulers: double the scanning,
+# double the Claude bill, and in auto mode duplicate orders.
+[[vm]]
+  size = "shared-cpu-1x"
+  memory = "512mb"
+
+[checks.live]
+  type = "http"
+  port = 8080
+  method = "GET"
+  path = "/api/live"
+  interval = "30s"
+  timeout = "5s"
+  grace_period = "40s"

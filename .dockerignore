@@ -1,0 +1,31 @@
+# Never let a secret into an image layer.
+.env
+.env.*
+!.env.example
+
+.git
+.gitignore
+venv/
+__pycache__/
+*.pyc
+.pytest_cache/
+.gstack/
+logs/
+data/
+tests/
+docs/
+*.png
+*.md
+!README.md
+
+# The other project in this repo.
+backend/
+frontend/
+agents/
+orchestrator/
+services/
+models/
+strategies/
+Dockerfile.backend
+Dockerfile.frontend
+docker-compose.yml

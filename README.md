@@ -208,6 +208,29 @@ daily stop ever saw. See **[docs/multi-broker.md](docs/multi-broker.md)**.
 trailing spaces, placeholder keys, a `.env` that isn't gitignored, missing
 packages, and whether live trading is (correctly) still switched off.
 
+### Running it in the cloud
+
+The bot runs fine on a laptop, but then it only trades while that laptop is
+awake. `docs/deploy.md` covers putting it on a host: Fly.io, or any box with
+Docker, using `Dockerfile.trader`.
+
+One thing to get right before it is reachable from the internet:
+
+```bash
+DASHBOARD_PASSWORD="$(openssl rand -base64 24)"
+```
+
+Every endpoint can move money — approving a signal sends a real order. With
+no password set the server answers **only clients on the same machine** and
+returns 403 to everyone else, so a deploy that forgets it refuses everybody
+rather than exposing the account. Set it deliberately anyway.
+
+The other two, both silent when wrong: the process must not be allowed to
+sleep (the scan loop is an in-process scheduler, so scale-to-zero means
+"stops trading"), and `DATA_DIR` must point at a mounted volume (the journal
+holds the day's opening equity, which the daily-loss breaker measures
+against).
+
 ### Making it actually trade
 
 Opening the dashboard does **not** start the bot. Scanning costs Claude API

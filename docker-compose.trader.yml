@@ -1,0 +1,42 @@
+# Self-hosting the trading bot on any box with Docker.
+#
+#   cp .env.example .env     and fill it in, including DASHBOARD_PASSWORD
+#   docker compose -f docker-compose.trader.yml up -d
+#
+# Named separately from docker-compose.yml, which belongs to the other
+# project in this repo.
+
+services:
+  trader:
+    build:
+      context: .
+      dockerfile: Dockerfile.trader
+    # Survives a reboot of the host. A trading bot that quietly stays down
+    # after a kernel update is worse than one that was never started.
+    restart: unless-stopped
+    env_file: .env
+    environment:
+      DATA_DIR: /data
+      LOG_DIR: /data/logs
+      WEBHOOK_HOST: 0.0.0.0
+      WEBHOOK_PORT: 8080
+      AUTOSTART_SCANNER: "true"
+    ports:
+      # Bound to localhost on purpose. Put a reverse proxy with TLS in
+      # front rather than exposing Basic auth over plain HTTP, where the
+      # password crosses the network in base64 on every request.
+      - "127.0.0.1:8080:8080"
+    volumes:
+      # The trade journal. Without this every `docker compose up` starts
+      # the journal, the equity curve and the day's opening equity from
+      # empty — and the day-loss circuit breaker measures against that.
+      - trader_data:/data
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://127.0.0.1:8080/api/live"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 40s
+
+volumes:
+  trader_data:

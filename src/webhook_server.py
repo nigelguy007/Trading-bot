@@ -27,9 +27,11 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Request
 from fastapi.responses import HTMLResponse, JSONResponse
 
 from src.app import AppContext, build_app
+from src.config import get_settings
 from src.broker.base import BrokerError
 from src.logging_setup import get_logger
 from src.metrics import compute_metrics
+from src.auth import DashboardAuth
 from src.runner import BackgroundScanner
 
 log = get_logger(__name__)
@@ -112,6 +114,21 @@ async def lifespan(app: FastAPI):
 
 
 app = FastAPI(title="AI Trading Bot", version="1.0.0", lifespan=lifespan)
+
+# Every endpoint below sits behind this. Without DASHBOARD_PASSWORD it
+# serves loopback only, so a local checkout is unchanged and a public
+# deploy cannot accidentally expose the account.
+app.add_middleware(DashboardAuth, settings=get_settings())
+
+
+@app.get("/api/live")
+async def live() -> dict:
+    """
+    Liveness for a platform health check. Deliberately says nothing about
+    the account, because it is the one endpoint reachable without
+    credentials.
+    """
+    return {"status": "ok"}
 
 
 # ====================================================================== #
