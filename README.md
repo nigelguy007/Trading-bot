@@ -212,7 +212,7 @@ packages, and whether live trading is (correctly) still switched off.
 
 The bot runs fine on a laptop, but then it only trades while that laptop is
 awake. `docs/deploy.md` covers putting it on a host: Fly.io, or any box with
-Docker, using `Dockerfile.trader`.
+Docker, using `Dockerfile`.
 
 One thing to get right before it is reachable from the internet:
 

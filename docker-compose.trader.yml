@@ -10,7 +10,7 @@ services:
   trader:
     build:
       context: .
-      dockerfile: Dockerfile.trader
+      dockerfile: Dockerfile
     # Survives a reboot of the host. A trading bot that quietly stays down
     # after a kernel update is worse than one that was never started.
     restart: unless-stopped

@@ -231,13 +231,13 @@ def test_the_journal_is_on_a_mounted_volume():
 
 
 def test_the_container_does_not_run_as_root():
-    dockerfile = (REPO / "Dockerfile.trader").read_text(encoding="utf-8")
+    dockerfile = (REPO / "Dockerfile").read_text(encoding="utf-8")
     assert "USER trader" in dockerfile
 
 
 def test_the_healthcheck_uses_the_unauthenticated_endpoint():
     """A health check cannot send a password."""
-    dockerfile = (REPO / "Dockerfile.trader").read_text(encoding="utf-8")
+    dockerfile = (REPO / "Dockerfile").read_text(encoding="utf-8")
     assert "/api/live" in dockerfile
     assert "/api/live" in (REPO / "fly.toml").read_text(encoding="utf-8")
 
@@ -311,3 +311,24 @@ def test_the_host_platform_chooses_the_port():
     src = (REPO / "src" / "webhook_server.py").read_text(encoding="utf-8")
     assert 'os.environ.get("PORT"' in src
     assert "injected.isdigit()" in src
+
+
+def test_the_dockerfile_is_where_build_platforms_look():
+    """
+    Railway, Render and most PaaS builders only look for a file literally
+    named `Dockerfile`. It was Dockerfile.trader, so Railway fell back to
+    auto-detection, found a Python project with no entry point, and
+    failed the build before it ever read a setting.
+    """
+    assert (REPO / "Dockerfile").exists()
+    assert not (REPO / "Dockerfile.trader").exists(), "two names would drift apart"
+
+
+def test_the_container_healthcheck_follows_the_real_port():
+    """
+    The platform picks the port via $PORT and the app binds it. A
+    healthcheck pinned to WEBHOOK_PORT would call a container unhealthy
+    while it was serving perfectly.
+    """
+    dockerfile = (REPO / "Dockerfile").read_text(encoding="utf-8")
+    assert "${PORT:-$WEBHOOK_PORT}" in dockerfile

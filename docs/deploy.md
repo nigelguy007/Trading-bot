@@ -116,7 +116,7 @@ desk.example.com {
 
 ## Option C — Render, Railway, Koyeb and similar
 
-The same `Dockerfile.trader` works. Whatever you pick, check:
+The same `Dockerfile` works. Whatever you pick, check:
 
 - a **persistent disk** mounted at `/data`, with `DATA_DIR=/data`
 - **no scale-to-zero** and no idle sleep

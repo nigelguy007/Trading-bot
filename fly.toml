@@ -12,7 +12,7 @@ app = "trading-desk"
 primary_region = "lhr"
 
 [build]
-  dockerfile = "Dockerfile.trader"
+  dockerfile = "Dockerfile"
 
 [env]
   DATA_DIR = "/data"

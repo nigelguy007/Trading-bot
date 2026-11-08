@@ -1,7 +1,11 @@
 # The trading bot, for a host that is not your laptop.
 #
-# Deliberately separate from Dockerfile.backend / Dockerfile.frontend,
-# which belong to the other project in this repo.
+# This is the repo's root Dockerfile on purpose. It was Dockerfile.trader,
+# to sit apart from Dockerfile.backend / Dockerfile.frontend (the other
+# project here) — but Railway, Render and most PaaS builders only look for
+# a file called `Dockerfile`. With none, Railway fell back to guessing,
+# found a Python project with no entry point and failed the build before
+# it ever read a setting.
 #
 # Two things here are load-bearing for a trading bot specifically:
 #
@@ -54,6 +58,6 @@ VOLUME ["/data"]
 # /api/live is the one endpoint that needs no credentials, and it says
 # nothing about the account.
 HEALTHCHECK --interval=30s --timeout=5s --start-period=40s --retries=3 \
-  CMD curl -fsS "http://127.0.0.1:${WEBHOOK_PORT}/api/live" || exit 1
+  CMD curl -fsS "http://127.0.0.1:${PORT:-$WEBHOOK_PORT}/api/live" || exit 1
 
 CMD ["python", "-m", "src.cli", "serve"]
