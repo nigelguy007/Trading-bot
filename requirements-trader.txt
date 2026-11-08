@@ -15,3 +15,4 @@ structlog>=24.4.0        # run logs
 apscheduler>=3.10.4      # the 15-minute scan loop
 fastapi>=0.115.0         # TradingView webhook + dashboard
 uvicorn[standard]>=0.32.0
+psycopg[binary]>=3.2      # Postgres journal (JOURNAL_BACKEND=postgres)

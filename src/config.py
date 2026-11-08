@@ -181,6 +181,12 @@ class Settings(BaseSettings):
     # Who may reach the dashboard. Unset means loopback only, so a local
     # checkout needs no password and a cloud deploy that forgot one
     # refuses everybody rather than serving the account to the internet.
+    # Where the trade journal lives. "sqlite" is a file under DATA_DIR and
+    # needs nothing. "postgres" needs DATABASE_URL and is what a host with
+    # no durable disk wants — the journal outlives the container.
+    journal_backend: Literal["sqlite", "postgres"] = "sqlite"
+    database_url: str = ""
+
     dashboard_user: str = "trader"
     dashboard_password: str = ""
     daily_report_time: str = "16:15"

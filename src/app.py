@@ -20,6 +20,26 @@ from src.data.market_data import MarketDataProvider, build_market_data
 from src.data.news import NewsClient
 from src.execution import ExecutionEngine
 from src.journal import TradeJournal
+
+
+def build_journal(settings):
+    """
+    The trade journal, SQLite or Postgres.
+
+    Both satisfy the same interface; tests/test_journal_parity.py drives
+    the two through identical operations and compares every read,
+    including P&L, R-multiples and the day's opening equity.
+    """
+    if settings.journal_backend == "postgres":
+        if not settings.database_url:
+            raise RuntimeError(
+                "JOURNAL_BACKEND=postgres needs DATABASE_URL. Use the "
+                "Supabase connection string (Session pooler)."
+            )
+        from src.journal_pg import PostgresJournal
+
+        return PostgresJournal(settings.database_url)
+    return TradeJournal(settings.journal_db)
 from src.logging_setup import configure_logging, get_logger
 from src.pipeline import TradingPipeline
 from src.portfolio import PortfolioManager
@@ -137,7 +157,7 @@ def build_app(
             ),
         )
 
-    journal = TradeJournal(settings.journal_db)
+    journal = build_journal(settings)
     brokers = build_router(settings, force_simulated=force_simulated)
     broker = brokers.default
     # The ROUTER, not one broker: equity, positions, exposure and open risk
