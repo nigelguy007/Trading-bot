@@ -17,6 +17,7 @@ order.
 from __future__ import annotations
 
 import hmac
+import os
 import subprocess
 from contextlib import asynccontextmanager
 from functools import lru_cache
@@ -1722,9 +1723,17 @@ def run_server() -> None:  # pragma: no cover - entry point
     from src.config import get_settings
 
     settings = get_settings()
+    # Railway, Render, Heroku and friends pick the port themselves and
+    # pass it as $PORT; a container that listens anywhere else is simply
+    # never routed to, and looks like a broken deploy rather than a
+    # misread setting. $PORT wins when it is present.
+    port = settings.webhook_port
+    injected = os.environ.get("PORT", "").strip()
+    if injected.isdigit():
+        port = int(injected)
     uvicorn.run(
         "src.webhook_server:app",
         host=settings.webhook_host,
-        port=settings.webhook_port,
+        port=port,
         log_level=settings.log_level.lower(),
     )

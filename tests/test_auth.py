@@ -300,3 +300,14 @@ def test_the_deploy_script_does_not_ship_deployment_keys_as_secrets():
     """fly.toml sets these; a stale .env copy would silently override it."""
     body = (REPO / "scripts" / "deploy-fly.sh").read_text(encoding="utf-8")
     assert "DATA_DIR|LOG_DIR|WEBHOOK_HOST|WEBHOOK_PORT|AUTOSTART_SCANNER" in body
+
+
+def test_the_host_platform_chooses_the_port():
+    """
+    Railway and Render pass the port as $PORT. A container listening
+    anywhere else is never routed to, which looks like a broken build
+    rather than a misread setting.
+    """
+    src = (REPO / "src" / "webhook_server.py").read_text(encoding="utf-8")
+    assert 'os.environ.get("PORT"' in src
+    assert "injected.isdigit()" in src
