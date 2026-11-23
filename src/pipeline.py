@@ -104,6 +104,15 @@ class TradingPipeline:
     def run_cycle(self, symbols: list[str] | None = None) -> CycleResult:
         symbols = symbols or self.settings.all_symbols
         result = CycleResult()
+
+        # Kill switch first — before journaling, data fetches or model calls.
+        kill = self.execution.kill_switch.state()
+        if kill is not None:
+            result.halted = True
+            result.halt_reason = kill.describe()
+            log.warning("pipeline.kill_switch", reason=kill.reason)
+            return result
+
         run_id = self.journal.start_run()
 
         expired = self.execution.expire_stale_approvals()

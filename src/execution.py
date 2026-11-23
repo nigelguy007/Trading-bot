@@ -14,7 +14,8 @@ mode, not a default.
 """
 from __future__ import annotations
 
-from typing import Optional
+from datetime import datetime, timedelta, timezone
+from typing import Callable, Optional
 
 from src.alerts.router import AlertRouter
 from src.approvals import ApprovalStore, signal_from_entry
@@ -22,10 +23,15 @@ from src.broker.base import Broker
 from src.broker.registry import BrokerRouter
 from src.config import Settings
 from src.journal import TradeJournal
+from src.killswitch import KillSwitch
 from src.logging_setup import get_logger
 from src.models import OrderResult, PositionSizing, RiskDecision, Signal
 
 log = get_logger(__name__)
+
+# A journal trade younger than this is not declared closed just because the
+# broker shows no position yet — the entry may still be working.
+CLOSE_DETECTION_GRACE = timedelta(minutes=30)
 
 
 class ExecutionEngine:
@@ -36,12 +42,14 @@ class ExecutionEngine:
         journal: TradeJournal,
         approvals: ApprovalStore,
         alerts: AlertRouter,
+        kill_switch: KillSwitch | None = None,
     ) -> None:
         self.settings = settings
         self.brokers = brokers
         self.journal = journal
         self.approvals = approvals
         self.alerts = alerts
+        self.kill_switch = kill_switch or KillSwitch(settings.data_path)
 
     # ------------------------------------------------------------------ #
     @property
@@ -135,6 +143,18 @@ class ExecutionEngine:
 
     # ------------------------------------------------------------------ #
     def _place(self, signal: Signal, sizing: PositionSizing, broker: Broker) -> OrderResult:
+        # The kill switch is checked HERE, at the last line before money moves,
+        # not only at the top of a cycle — it may have been pulled mid-cycle,
+        # or between an alert and your tap on "approve".
+        kill = self.kill_switch.state()
+        if kill is not None:
+            log.warning("execution.blocked_by_kill_switch", symbol=signal.symbol)
+            return OrderResult(
+                accepted=False, broker=broker.name, symbol=signal.symbol,
+                qty=sizing.shares, side=signal.direction,
+                message=f"Order blocked: {kill.describe()}",
+            )
+
         if not broker.is_paper and not self.settings.live_enabled_for(broker.name):
             # Belt and braces: should be unreachable, but this is the one place
             # where being wrong costs real money.
@@ -190,3 +210,102 @@ class ExecutionEngine:
                     self.journal.close_trade(trade["id"], exit_price, exit_reason=reason)
             return True, f"Closed {symbol} at {exit_price:,.2f}."
         return False, f"No open position in {symbol}."
+
+    # ------------------------------------------------------------------ #
+    def engage_kill_switch(
+        self, reason: str = "manual", source: str = "unknown", flatten: bool = False
+    ) -> str:
+        """
+        Stop all trading now. Optionally market-close every open position.
+
+        The switch is engaged BEFORE flattening, so nothing can open a new
+        position while the old ones are being closed.
+        """
+        state = self.kill_switch.engage(reason, source)
+        lines = [f"KILL SWITCH ENGAGED — {state.reason} (via {state.source})",
+                 "No new orders will be placed."]
+        if flatten:
+            lines += self.flatten_all(reason="kill switch")
+        else:
+            lines.append("Open positions keep their broker-side stops and targets.")
+        lines.append("Resume only from the CLI: python -m src.cli resume --yes")
+        message = "\n".join(lines)
+        self.alerts.broadcast(message)
+        return message
+
+    def flatten_all(self, reason: str = "flatten") -> list[str]:
+        """Market-close every position on every broker. One line per outcome."""
+        out: list[str] = []
+        for broker in self.brokers.all():
+            try:
+                positions = broker.get_positions()
+            except Exception as exc:
+                out.append(f"{broker.name}: could not read positions ({exc}) — CLOSE MANUALLY")
+                continue
+            for position in positions:
+                ok, msg = self.close_position(position.symbol, reason=reason)
+                out.append(msg if ok else f"FAILED {position.symbol}: {msg} — CLOSE MANUALLY")
+        return out or ["No open positions to close."]
+
+    def sync_closed_trades(
+        self, price_of: Optional[Callable[[str], float]] = None
+    ) -> list[dict]:
+        """
+        Find journal trades the broker has already closed — a bracket's stop or
+        take-profit filled — record them, and alert.
+
+        Without this the journal says "open" forever and nobody hears about the
+        take-profit. Broker order-fill APIs differ per venue, so the exit price
+        is ESTIMATED: whichever of stop/target is nearer the current price, and
+        labelled "(est.)" everywhere it appears. Check the broker for the fill.
+        """
+        try:
+            held = {p.symbol for b in self.brokers.all() for p in b.get_positions()}
+        except Exception as exc:
+            # If we cannot see positions we must not conclude they are gone.
+            log.warning("execution.sync_skipped", error=str(exc))
+            return []
+
+        now = datetime.now(timezone.utc)
+        closed: list[dict] = []
+        for trade in self.journal.open_trades():
+            if trade["symbol"] in held or not _older_than(trade.get("opened_at"), now):
+                continue
+            leg, exit_price = _likely_leg(trade, price_of)
+            row = self.journal.close_trade(trade["id"], exit_price, exit_reason=f"{leg} (est.)")
+            if row is None:
+                continue
+            closed.append(row)
+            verb = "TAKE-PROFIT HIT" if leg == "target" else "STOPPED OUT"
+            self.alerts.broadcast(
+                f"{verb} — {trade['symbol']} {trade['direction']} closed at the broker. "
+                f"Est. exit {exit_price:,.2f}, {row['r_multiple']:+.2f}R "
+                f"(estimate — confirm the fill on the broker)."
+            )
+        return closed
+
+
+def _older_than(opened_at: Optional[str], now: datetime) -> bool:
+    if not opened_at:
+        return True
+    try:
+        ts = datetime.fromisoformat(opened_at.replace("Z", "+00:00"))
+    except ValueError:
+        return True
+    if ts.tzinfo is None:
+        ts = ts.replace(tzinfo=timezone.utc)
+    return now - ts >= CLOSE_DETECTION_GRACE
+
+
+def _likely_leg(trade: dict, price_of: Optional[Callable[[str], float]]) -> tuple[str, float]:
+    stop, target = float(trade["stop"]), float(trade["target"])
+    price = None
+    if price_of is not None:
+        try:
+            price = float(price_of(trade["symbol"]))
+        except Exception:
+            price = None
+    if price is None:
+        # No price: assume the stop. Overstating a loss is the safe mistake.
+        return "stop", stop
+    return ("target", target) if abs(price - target) < abs(price - stop) else ("stop", stop)

@@ -60,6 +60,10 @@ class BotScheduler:
             if any(v.get("cancelled") or v.get("unprotected") for v in repairs.values()):
                 log.info("scheduler.reconciled", repairs=repairs)
 
+            # Bracket stops/targets fill at the broker, not here — find them,
+            # journal them and send the "take-profit hit" / "stopped out" alert.
+            self.ctx.execution.sync_closed_trades(self.ctx.market_data.get_last_price)
+
             result = self.ctx.pipeline.run_cycle()
             log.info("scheduler.cycle_done", summary=result.summary())
         except Exception:

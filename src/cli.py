@@ -342,21 +342,108 @@ def cmd_serve(args: argparse.Namespace) -> int:
     return 0
 
 
+def _date(value: str | None):
+    from datetime import datetime, timezone
+
+    if not value:
+        return None
+    try:
+        return datetime.fromisoformat(value).replace(tzinfo=timezone.utc)
+    except ValueError:
+        raise SystemExit(f"Bad date {value!r} — use YYYY-MM-DD")
+
+
 def cmd_backtest(args: argparse.Namespace) -> int:
-    from src.backtest import Backtester
+    from src.backtest import Backtester, CostModel
     from src.data.market_data import build_market_data
+    from src.validation import walk_forward
     from strategies.base import load_strategies
 
     settings = get_settings()
     configure_logging(settings.log_level, settings.log_path)
 
-    market_data = build_market_data(settings)
+    market_data = build_market_data(settings, force_csv=args.csv)
     strategies = load_strategies(args.strategies.split(",") if args.strategies else None)
     symbols = [s.strip().upper() for s in args.symbols.split(",")] if args.symbols else settings.all_symbols
+    costs = CostModel(
+        commission_per_unit=args.commission_per_unit,
+        commission_pct=args.commission_pct,
+        slippage_bps=args.slippage_bps,
+    )
+    backtester = Backtester(settings, market_data, strategies, args.equity, costs=costs)
+    start, end, split = _date(args.start), _date(args.end), _date(args.split)
 
-    result = Backtester(settings, market_data, strategies, args.equity).run(symbols, args.bars)
+    if split is not None:
+        if start is None:
+            raise SystemExit("--split needs --start (the first in-sample day)")
+        report = walk_forward(backtester, symbols, start, split, end, simulations=args.simulations)
+        print("\n" + report.report())
+        return 0 if report.verdict.startswith("PASS") else 3
+
+    result = backtester.run(symbols, args.bars, start=start, end=end)
     print("\n" + result.report())
     return 0
+
+
+def cmd_kill(args: argparse.Namespace) -> int:
+    """
+    Engage the kill switch FIRST, straight on disk, before building anything —
+    a broken broker config must never be the reason the kill button fails.
+    """
+    from src.killswitch import KillSwitch
+
+    settings = get_settings()
+    switch = KillSwitch(settings.data_path)
+    state = switch.engage(args.reason, source="cli")
+    print(f"KILL SWITCH ENGAGED — {state.reason}. No new orders will be placed.")
+
+    try:
+        from src.app import build_app
+
+        # No model needed to alert or close positions — a missing Claude key
+        # must not be the reason a flatten fails. Same settings object, so the
+        # app sees the very kill file engaged above.
+        ctx = build_app(settings, force_simulated=args.simulated, require_llm=False)
+    except Exception as exc:
+        print(f"(Could not start the app to alert/flatten: {exc})")
+        if args.flatten:
+            print("FLATTEN NOT DONE — close positions at the broker manually.")
+            return 1
+        return 0
+    try:
+        # Already engaged, so this only alerts and (optionally) flattens.
+        print(ctx.execution.engage_kill_switch(args.reason, source="cli", flatten=args.flatten))
+        return 0
+    finally:
+        ctx.close()
+
+
+def cmd_resume(args: argparse.Namespace) -> int:
+    from src.killswitch import KillSwitch
+
+    settings = get_settings()
+    switch = KillSwitch(settings.data_path)
+    state = switch.state()
+    if state is None:
+        print("The kill switch is not engaged.")
+        return 0
+    print(state.describe())
+    if not args.yes:
+        answer = input("Resume trading? Only after you know why it was pulled. [y/N] ")
+        if answer.strip().lower() != "y":
+            print("Still stopped.")
+            return 1
+    switch.release()
+    print("Kill switch released. The next cycle may trade.")
+    return 0
+
+
+def cmd_kill_status(args: argparse.Namespace) -> int:
+    from src.killswitch import KillSwitch
+
+    state = KillSwitch(get_settings().data_path).state()
+    print(state.describe() if state else "Not engaged — the bot may trade.")
+    return 2 if state else 0
 
 
 def cmd_report(args: argparse.Namespace) -> int:
@@ -599,12 +686,44 @@ def build_parser() -> argparse.ArgumentParser:
     p = sub.add_parser("serve", help="run the dashboard and TradingView webhook")
     p.set_defaults(func=cmd_serve)
 
-    p = sub.add_parser("backtest", help="backtest the mechanical rules on past data")
+    p = sub.add_parser(
+        "backtest",
+        help="backtest the mechanical rules on past data",
+        description="Without dates: the last --bars bars. With --start/--end: that window. "
+                    "With --split: in-sample [start, split), out-of-sample [split, end), "
+                    "plus a coin-flip benchmark. Exit code 3 = validation did not pass.",
+    )
     p.add_argument("--symbols")
     p.add_argument("--bars", type=int, default=500)
     p.add_argument("--equity", type=float, default=10_000.0)
     p.add_argument("--strategies")
+    p.add_argument("--start", help="first day trades may open, YYYY-MM-DD")
+    p.add_argument("--end", help="end of the window, exclusive, YYYY-MM-DD")
+    p.add_argument("--split", help="out-of-sample starts here, YYYY-MM-DD (needs --start)")
+    p.add_argument("--commission-per-unit", dest="commission_per_unit", type=float, default=0.0,
+                   help="per share/contract per side, e.g. 2.25 for ES")
+    p.add_argument("--commission-pct", dest="commission_pct", type=float, default=0.0,
+                   help="%% of notional per side, e.g. 0.1")
+    p.add_argument("--slippage-bps", dest="slippage_bps", type=float, default=0.0,
+                   help="adverse fill on market orders, basis points")
+    p.add_argument("--simulations", type=int, default=1000, help="coin-flip simulations")
+    p.add_argument("--csv", action="store_true",
+                   help="read data/csv/*.csv (e.g. Databento output) even if broker keys exist")
     p.set_defaults(func=cmd_backtest)
+
+    p = sub.add_parser("kill", help="KILL SWITCH: stop all trading now")
+    p.add_argument("--reason", default="manual")
+    p.add_argument("--flatten", action="store_true",
+                   help="also market-close every open position")
+    add_common(p)
+    p.set_defaults(func=cmd_kill)
+
+    p = sub.add_parser("resume", help="release the kill switch")
+    p.add_argument("--yes", action="store_true")
+    p.set_defaults(func=cmd_resume)
+
+    p = sub.add_parser("kill-status", help="is the kill switch engaged?")
+    p.set_defaults(func=cmd_kill_status)
 
     p = sub.add_parser("report", help="build and send the daily report")
     add_common(p)

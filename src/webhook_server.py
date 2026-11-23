@@ -120,7 +120,7 @@ async def telegram_webhook(request: Request) -> JSONResponse:
 
     callback = update.get("callback_query")
     if not callback:
-        return JSONResponse({"status": "ignored"})
+        return _telegram_command(ctx, update.get("message") or {})
 
     # Only the configured chat may approve trades.
     chat_id = str((callback.get("message") or {}).get("chat", {}).get("id", ""))
@@ -138,6 +138,26 @@ async def telegram_webhook(request: Request) -> JSONResponse:
     ctx.alerts.telegram.answer_callback(callback.get("id", ""), message)
     ctx.alerts.telegram.send(message)
     return JSONResponse({"status": "ok" if ok else "failed", "message": message})
+
+
+def _telegram_command(ctx: AppContext, message: dict) -> JSONResponse:
+    """
+    `/kill` (and `/kill flatten`) from the configured chat engages the kill
+    switch — the "turn it off from my phone" button. Exact chat match only, and
+    only when a chat is configured at all. There is no `/resume`, on purpose.
+    """
+    text = str(message.get("text") or "").strip().lower()
+    if not text.startswith("/kill"):
+        return JSONResponse({"status": "ignored"})
+    chat_id = str((message.get("chat") or {}).get("id", ""))
+    allowed = str(ctx.settings.telegram_chat_id or "")
+    if not allowed or chat_id != allowed:
+        log.warning("server.telegram_kill_wrong_chat", chat_id=chat_id)
+        raise HTTPException(status_code=403, detail="unauthorised chat")
+    reply = ctx.execution.engage_kill_switch(
+        reason="Telegram /kill", source="telegram", flatten="flatten" in text
+    )
+    return JSONResponse({"status": "ok", "message": reply})
 
 
 # ====================================================================== #
@@ -290,6 +310,32 @@ async def deny(signal_id: str) -> JSONResponse:
     return JSONResponse({"ok": ok, "message": message}, status_code=200 if ok else 409)
 
 
+# ---------------------------------------------------------------------- #
+#  Kill switch. Engaging is open to any caller that can reach the dashboard:
+#  the worst a stranger can do is stop the bot. Releasing is deliberately NOT
+#  available over HTTP — it is `python -m src.cli resume`, on the machine.
+# ---------------------------------------------------------------------- #
+@app.get("/api/kill")
+async def kill_status() -> dict:
+    state = get_context().execution.kill_switch.state()
+    return {"engaged": state is not None, **(state.__dict__ if state else {})}
+
+
+@app.post("/api/kill")
+async def kill(request: Request) -> dict:
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    body = body if isinstance(body, dict) else {}
+    message = get_context().execution.engage_kill_switch(
+        reason=str(body.get("reason") or "dashboard kill button")[:200],
+        source="dashboard",
+        flatten=bool(body.get("flatten")),
+    )
+    return {"engaged": True, "message": message}
+
+
 @app.post("/api/scan")
 async def scan(background: BackgroundTasks) -> dict:
     background.add_task(_run_scan, get_context().settings.all_symbols)
@@ -403,6 +449,10 @@ DASHBOARD_HTML = """<!doctype html>
   .paper { background:#af60ff1f; color:var(--accent); border:1px solid #af60ff44; }
   .live  { background:#ff6b6b1f; color:var(--neg); border:1px solid #ff6b6b55; }
 
+  .kill { background:#ff6b6b; color:#1a0b0b; border:0; border-radius:999px;
+          padding:10px 18px; font-weight:600; cursor:pointer; letter-spacing:.02em; }
+  .kill:hover { filter:brightness(1.1); }
+  .kill.engaged { background:transparent; color:var(--neg); border:1px solid var(--neg); cursor:default; }
   .banner { background:#e3b3410f; border:1px solid #e3b34155; color:var(--warn);
             border-radius:var(--radius); padding:14px 16px; margin-bottom:14px;
             font-size:13.5px; font-weight:400; }
@@ -623,6 +673,8 @@ DASHBOARD_HTML = """<!doctype html>
     <div class="sub" id="status">loading…</div>
   </div>
   <div class="chips" id="chips"></div>
+  <button class="kill" id="kill-btn" onclick="pullKill()"
+          title="Stop all trading now. Resume only from the CLI.">Kill switch</button>
 </div>
 
 <div id="banner"></div>
@@ -936,6 +988,27 @@ async function refresh() {
   }
 }
 
+async function refreshKill() {
+  try {
+    const k = await (await fetch("/api/kill")).json();
+    const btn = document.getElementById("kill-btn");
+    btn.classList.toggle("engaged", k.engaged);
+    btn.textContent = k.engaged ? "STOPPED — kill switch engaged" : "Kill switch";
+    btn.disabled = k.engaged;
+    if (k.engaged) btn.title = `${k.reason} (via ${k.source}, ${k.engaged_at}). Resume: python -m src.cli resume`;
+  } catch (e) { /* the main refresh reports connection errors */ }
+}
+
+async function pullKill() {
+  if (!confirm("Stop ALL trading now?")) return;
+  const flatten = confirm("Also market-close every open position?\n\nOK = close everything\nCancel = keep positions (their stops/targets stay on)");
+  const r = await fetch("/api/kill", {method:"POST", headers:{"Content-Type":"application/json"},
+                                      body: JSON.stringify({flatten, reason:"dashboard kill button"})});
+  const j = await r.json();
+  alert(j.message);
+  refreshKill(); refresh();
+}
+
 async function act(id, what) {
   const r = await fetch(`/api/signals/${id}/${what}`, {method:"POST"});
   const j = await r.json();
@@ -943,8 +1016,8 @@ async function act(id, what) {
   refresh();
 }
 
-refresh();
-setInterval(refresh, 20000);
+refresh(); refreshKill();
+setInterval(() => { refresh(); refreshKill(); }, 20000);
 </script>
 </body>
 </html>

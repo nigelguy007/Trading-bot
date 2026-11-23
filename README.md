@@ -307,7 +307,8 @@ a trap.
 
 | Stage | What it proves | How |
 |---|---|---|
-| Backtesting | How the rules would have done on past data | `python -m src.cli backtest` |
+| Backtesting | How the rules would have done on past data, after costs | `python -m src.cli backtest` |
+| Out-of-sample | Whether it survives years it was never built on, and beats a coin flip | `backtest --start … --split …` |
 | Paper trading | How it behaves live, with fake money | Alpaca paper keys, or an IG demo account |
 | Forward testing | Real-time results over weeks, still on paper | `python -m src.cli run` |
 | Metrics | Win rate, avg R, max drawdown, profit factor | `python -m src.cli metrics` |
@@ -327,6 +328,81 @@ report both refuse to draw conclusions below 30 trades and say so explicitly.
 
 If backtest results look too good, they're curve-fitted. Re-run on data the
 rules weren't designed against.
+
+### Years of real data, real costs, and a test it can fail
+
+**1. Pull 16 years of 1-minute data from Databento.** The free cost check runs
+first. The download refuses to start above `--max-cost` (default $20) or without `--yes`.
+
+```bash
+export DATABENTO_API_KEY=db-...          # databento.com — new accounts get free credit
+python scripts/fetch_databento.py --symbol ES.v.0 --name ES          # quote only
+python scripts/fetch_databento.py --symbol ES.v.0 --name ES --yes    # download + resample
+```
+
+The raw 1-minute bars are kept in `data/databento/ES_ohlcv-1m.csv.gz`. Daily bars
+go to `data/csv/ES.csv`, bucketed by CME session (the trading day starts 17:00
+Chicago) and with futures rolls back-adjusted, so roll gaps can't fire fake stops.
+Databento's CME history starts 2010-06-06.
+
+> ES futures can't be traded through Alpaca, IG or Trading 212. ES is a sound
+> *research* proxy for SPY or the US 500 spread bet, but re-validate on the
+> instrument you'll actually trade before risking money.
+
+**2. Backtest with fees and slippage.** Market orders (entries, stops,
+end-of-window exits) are slipped against you. The take-profit is a resting limit,
+so it isn't slipped. A bar that opens through the stop fills at the open, not at the stop.
+
+```bash
+python -m src.cli backtest --csv --symbols ES --start 2010-06-07 --end 2020-01-01 \
+    --commission-per-unit 2.25 --slippage-bps 1
+```
+
+**3. Build on 2010–2020, judge on 2020–2026, and beat a coin flip.**
+
+```bash
+python -m src.cli backtest --csv --symbols ES --start 2010-06-07 --split 2020-01-01 \
+    --commission-per-unit 2.25 --slippage-bps 1
+```
+
+This runs in-sample `[start, split)` and out-of-sample `[split, end)` with no
+shared bar. It then replaces every out-of-sample entry with a random one (same
+stop and target distances, same costs) 1,000 times. The p-value is the chance a
+coin flip does as well. "Win rate over 50%" is *not* the test: a 2:1 system
+wins under half the time and still makes money. The verdict is PASS only with
+30+ out-of-sample trades, positive expectancy after costs, and p < 0.05. Any
+other result exits non-zero.
+
+**The out-of-sample years are single-use.** Once you've read the result, changing
+the rules turns them into in-sample data. Validate the next version on paper.
+
+---
+
+## Kill switch
+
+One action stops all trading, from wherever you are:
+
+| Where | How |
+|---|---|
+| Terminal | `python -m src.cli kill` (add `--flatten` to market-close everything) |
+| Dashboard | the red **Kill switch** button, top right |
+| Telegram | send `/kill` (or `/kill flatten`) from your configured chat |
+| Status | `python -m src.cli kill-status` |
+| Resume | `python -m src.cli resume` — terminal only, on purpose |
+
+It's a file (`data/KILL_SWITCH.json`) that the bot re-reads before every scan
+**and right before every order**. So it stops a bot already running in another
+process, stays engaged across restarts, and blocks an approval tapped after you
+pulled it. If the file is unreadable, it counts as engaged. Nothing reachable
+over the network can release it: a leaked webhook can stop the bot, never restart it.
+
+Without `--flatten`, open positions keep their broker-side stop and target.
+
+**Take-profit and stop alerts.** Each cycle the bot compares the journal with the
+broker. A trade the broker has closed (its bracket stop or target filled) is
+journaled and announced on Discord/Telegram as "TAKE-PROFIT HIT" or "STOPPED OUT".
+The exit price is an *estimate*: whichever of stop or target is nearer the current
+price, labelled "(est.)". Confirm the fill on the broker.
 
 ---
 
